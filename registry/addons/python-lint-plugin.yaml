@@ -1,0 +1,38 @@
+id: python-lint-plugin
+name: Python Code Quality & Linting Plugin
+version: 2.0.0
+description: Composite plugin bundling ruff and mypy linters with AI agent quality skills.
+documentation_url: https://aiaddons.dev/plugins/python-lint
+license: MIT
+category: developer-tools
+integration_type: plugin
+target_agents:
+  - "*"
+supported_scopes:
+  - global
+  - workspace
+source:
+  source_type: local
+  path: "plugins/python-lint"
+dependencies:
+  - name: ruff
+    type: cli
+    required: true
+  - name: mypy
+    type: cli
+    required: true
+trust:
+  verification_status: verified
+  publisher:
+    name: AI Addons Core
+    declared_verified: true
+tags:
+  - python
+  - ruff
+  - mypy
+  - plugin
+handler_spec:
+  plugin:
+    components:
+      - ruff-cli
+      - refactoring-skill

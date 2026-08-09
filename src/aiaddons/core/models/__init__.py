@@ -1,5 +1,47 @@
 """Domain models subpackage."""
 
 from aiaddons.core.models.agent import AgentCapability, AgentDetectionResult, Scope
+from aiaddons.core.models.manifest import (
+    CLIToolHandlerSpec,
+    DependencySpec,
+    DependencyType,
+    EnvVarSpec,
+    HandlerSpecContainer,
+    IntegrationManifest,
+    IntegrationType,
+    MCPHandlerSpec,
+    MCPRuntime,
+    MCPTransport,
+    PluginHandlerSpec,
+    PublisherClaimSpec,
+    SkillHandlerSpec,
+    SourceSpec,
+    SourceType,
+    TrustMetadata,
+    VerificationStatus,
+    validate_safe_relative_path,
+)
 
-__all__ = ["AgentCapability", "AgentDetectionResult", "Scope"]
+__all__ = [
+    "AgentCapability",
+    "AgentDetectionResult",
+    "CLIToolHandlerSpec",
+    "DependencySpec",
+    "DependencyType",
+    "EnvVarSpec",
+    "HandlerSpecContainer",
+    "IntegrationManifest",
+    "IntegrationType",
+    "MCPHandlerSpec",
+    "MCPRuntime",
+    "MCPTransport",
+    "PluginHandlerSpec",
+    "PublisherClaimSpec",
+    "Scope",
+    "SkillHandlerSpec",
+    "SourceSpec",
+    "SourceType",
+    "TrustMetadata",
+    "VerificationStatus",
+    "validate_safe_relative_path",
+]

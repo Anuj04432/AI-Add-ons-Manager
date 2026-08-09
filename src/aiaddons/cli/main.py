@@ -5,6 +5,7 @@ from rich.console import Console
 
 from aiaddons import __version__
 from aiaddons.cli.commands.agents import agents_command
+from aiaddons.cli.commands.registry import info_command, list_command, search_command
 
 app = typer.Typer(
     name="aiaddons",
@@ -15,6 +16,9 @@ app = typer.Typer(
 console = Console()
 
 app.command(name="agents")(agents_command)
+app.command(name="list")(list_command)
+app.command(name="search")(search_command)
+app.command(name="info")(info_command)
 
 
 def version_callback(value: bool) -> None:

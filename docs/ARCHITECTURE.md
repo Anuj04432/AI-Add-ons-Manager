@@ -135,52 +135,53 @@ The registry is **declarative and metadata-driven**:
 
 ## 6. Registry Schema
 
-Every integration is validated against a strict Pydantic model (`IntegrationManifest`):
+Every integration is validated against a strict Pydantic model (`IntegrationManifest`) with `extra = "forbid"` configuration:
 
-```json
-{
-  "$schema": "https://aiaddons.dev/schemas/v1/integration.json",
-  "id": "github-mcp-server",
-  "version": "1.2.0",
-  "name": "GitHub MCP Server",
-  "description": "Model Context Protocol server for searching code, managing PRs, and issues.",
-  "publisher": {
-    "name": "Model Context Protocol Team",
-    "url": "https://github.com/modelcontextprotocol",
-    "verified": true
-  },
-  "license": "MIT",
-  "category": "developer-tools",
-  "tags": ["github", "mcp", "git"],
-  "type": "mcp",
-  "compatibility": {
-    "agents": {
-      "claude-code": ">=0.2.0",
-      "codex": "*"
-    },
-    "os": ["windows", "darwin", "linux"],
-    "python": ">=3.10"
-  },
-  "handler_spec": {
-    "mcp": {
-      "transport": "stdio",
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-github"],
-      "env_vars": [
-        {
-          "name": "GITHUB_PERSONAL_ACCESS_TOKEN",
-          "required": true,
-          "secret": true,
-          "description": "GitHub PAT with repo access"
-        }
-      ]
-    }
-  },
-  "security": {
-    "allowed_executables": ["npx"],
-    "checksum": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-  }
-}
+```yaml
+id: github-mcp
+name: GitHub MCP Server
+version: 1.2.0
+description: Model Context Protocol server for searching code, managing PRs, and inspecting issues.
+documentation_url: https://github.com/modelcontextprotocol/servers
+license: MIT
+category: developer-tools
+integration_type: mcp
+target_agents:
+  - claude-code
+  - codex
+supported_scopes:
+  - global
+  - workspace
+source:
+  source_type: package
+  package_name: "@modelcontextprotocol/server-github"
+  checksum: "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+dependencies:
+  - name: npx
+    type: cli
+    required: true
+trust:
+  verification_status: verified
+  publisher:
+    name: Model Context Protocol Team
+    url: https://github.com/modelcontextprotocol
+    declared_verified: true
+  allowed_executables:
+    - npx
+tags:
+  - github
+  - mcp
+  - git
+handler_spec:
+  mcp:
+    transport: stdio
+    runtime: npx
+    package_name: "@modelcontextprotocol/server-github"
+    env_vars:
+      - name: GITHUB_PERSONAL_ACCESS_TOKEN
+        required: true
+        secret: true
+        description: GitHub PAT with repo access
 ```
 
 ---

@@ -1,0 +1,30 @@
+id: refactoring-skill
+name: Automated Code Refactoring Skill
+version: 0.8.1
+description: Expert AI agent skill providing standardized refactoring patterns and clean code guidelines.
+documentation_url: https://aiaddons.dev/skills/refactoring
+license: Apache-2.0
+category: workflow
+integration_type: skill
+target_agents:
+  - claude-code
+supported_scopes:
+  - workspace
+source:
+  source_type: git
+  repository: https://github.com/aiaddons/refactoring-skill
+  ref: v0.8.1
+  commit_sha: 4a2d8f9e1c3b5a7d9e0f2a4b6c8d0e1f2a3b4c5d
+dependencies: []
+trust:
+  verification_status: community
+  publisher:
+    name: Community Developers
+    declared_verified: false
+tags:
+  - refactoring
+  - skill
+  - clean-code
+handler_spec:
+  skill:
+    skill_file: SKILL.md
