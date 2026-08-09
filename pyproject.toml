@@ -61,4 +61,4 @@ select = [
     "B",  # flake8-bugbear
     "UP", # pyupgrade
 ]
-ignore = []
+ignore = ["B008"]
