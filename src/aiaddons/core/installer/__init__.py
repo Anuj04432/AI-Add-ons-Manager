@@ -1,0 +1,45 @@
+"""Installer subpackage containing domain models, operation specs, and transactional engine."""
+
+from aiaddons.core.installer.engine import InstallationEngine
+from aiaddons.core.installer.models import (
+    AddMcpServerOperation,
+    AddPluginReferenceOperation,
+    AddSkillOperation,
+    BaseOperation,
+    CopyFileOperation,
+    CreateDirectoryOperation,
+    InstallationPlan,
+    InstallationTransaction,
+    ModifyJsonOperation,
+    ModifyYamlOperation,
+    OperationType,
+    RiskLevel,
+    RollbackMetadata,
+    RollbackOperation,
+    TransactionPhase,
+    TypedOperation,
+    WriteFileOperation,
+    validate_operation_safety,
+)
+
+__all__ = [
+    "AddMcpServerOperation",
+    "AddPluginReferenceOperation",
+    "AddSkillOperation",
+    "BaseOperation",
+    "CopyFileOperation",
+    "CreateDirectoryOperation",
+    "InstallationEngine",
+    "InstallationPlan",
+    "InstallationTransaction",
+    "ModifyJsonOperation",
+    "ModifyYamlOperation",
+    "OperationType",
+    "RiskLevel",
+    "RollbackMetadata",
+    "RollbackOperation",
+    "TransactionPhase",
+    "TypedOperation",
+    "WriteFileOperation",
+    "validate_operation_safety",
+]

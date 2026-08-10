@@ -1,6 +1,7 @@
 """Pydantic domain models for Add-on Manifests, Typed Handlers, and Trust Metadata."""
 
 import re
+import urllib.parse
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -28,6 +29,71 @@ class SourceType(StrEnum):
     LOCAL = "local"
 
 
+DANGEROUS_ENV_VARS: set[str] = {
+    "LD_PRELOAD",
+    "LD_LIBRARY_PATH",
+    "LD_AUDIT",
+    "DYLD_INSERT_LIBRARIES",
+    "DYLD_LIBRARY_PATH",
+    "PYTHONPATH",
+    "PYTHONHOME",
+    "PYTHONSTARTUP",
+    "NODE_OPTIONS",
+    "NODE_PATH",
+    "PATH",
+    "SHELL",
+    "COMSPEC",
+    "PS1",
+    "PROMPT_COMMAND",
+    "IFS",
+    "ENV",
+    "BASH_ENV",
+    "RUBYLIB",
+    "PERL5LIB",
+    "PERLLIB",
+    "JAVA_TOOL_OPTIONS",
+    "_JAVA_OPTIONS",
+}
+
+ENV_VAR_REGEX = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def validate_env_var_name(v: str) -> str:
+    """Validate that an environment variable name is safe and valid."""
+    name = v.strip()
+    if not name:
+        raise ValueError("Environment variable name cannot be empty.")
+    if not ENV_VAR_REGEX.match(name):
+        raise ValueError(
+            f"Security violation: Invalid environment variable name '{v}'. "
+            "Must match pattern [A-Za-z_][A-Za-z0-9_]*."
+        )
+    if name.upper() in DANGEROUS_ENV_VARS:
+        raise ValueError(
+            f"Security violation: Environment variable '{v}' is restricted for security reasons."
+        )
+    return name
+
+
+def validate_mcp_package_name(v: str) -> str:
+    """Validate that an MCP package name is safe and contains no argument injection vectors."""
+    cleaned = v.strip()
+    if not cleaned:
+        raise ValueError("Package name cannot be empty.")
+    if cleaned.startswith("-"):
+        raise ValueError(f"Security violation: Package name '{v}' cannot start with a hyphen.")
+    if any(c.isspace() for c in cleaned):
+        raise ValueError(f"Security violation: Package name '{v}' cannot contain whitespace.")
+    if any(char in cleaned for char in FORBIDDEN_SHELL_PATTERNS):
+        raise ValueError(f"Security violation: Package name '{v}' contains shell metacharacters.")
+
+    # Strict regex pattern for npm/PyPI package names with optional scope/version specifier
+    pattern = r"^(?:@[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+|[a-zA-Z0-9_.-]+)(?:[@=><~^]+[a-zA-Z0-9_.-]+)?$"
+    if not re.match(pattern, cleaned) or ".." in cleaned:
+        raise ValueError(f"Security violation: Invalid or unsafe package name '{v}'.")
+    return cleaned
+
+
 def validate_safe_relative_path(v: str | None) -> str | None:
     """Validate that a path string is strictly relative and contains no path traversal sequences."""
     if v is None:
@@ -37,23 +103,33 @@ def validate_safe_relative_path(v: str | None) -> str | None:
     if not cleaned:
         return cleaned
 
-    # Check for absolute path, UNC path, or Windows drive letter (e.g. C:\)
-    if (
-        cleaned.startswith("/")
-        or cleaned.startswith("\\")
-        or re.match(r"^[a-zA-Z]:", cleaned)
-        or cleaned.startswith("//")
-        or cleaned.startswith("\\\\")
-    ):
-        raise ValueError(f"Path traversal violation: Absolute or drive path '{v}' is prohibited.")
+    if "\0" in cleaned:
+        raise ValueError("Path traversal violation: Null byte detected in path.")
 
-    # Normalize backslashes to forward slashes for checking
-    normalized = cleaned.replace("\\", "/")
+    unquoted = urllib.parse.unquote(cleaned)
 
-    # Check for traversal sequences
-    parts = Path(normalized).parts
-    if ".." in parts or any(part == ".." for part in normalized.split("/")):
-        raise ValueError(f"Path traversal violation: Traversal sequence '..' detected in '{v}'.")
+    for path_str in (cleaned, unquoted):
+        # Check for absolute path, UNC path, or Windows drive letter (e.g. C:\)
+        if (
+            path_str.startswith("/")
+            or path_str.startswith("\\")
+            or re.match(r"^[a-zA-Z]:", path_str)
+            or path_str.startswith("//")
+            or path_str.startswith("\\\\")
+        ):
+            raise ValueError(
+                f"Path traversal violation: Absolute, drive, or UNC path '{v}' is prohibited."
+            )
+
+        # Normalize backslashes to forward slashes for checking
+        normalized = path_str.replace("\\", "/")
+
+        # Check for traversal sequences
+        parts = Path(normalized).parts
+        if ".." in parts or any(part == ".." for part in normalized.split("/")):
+            raise ValueError(
+                f"Path traversal violation: Traversal sequence '..' detected in '{v}'."
+            )
 
     return cleaned
 
@@ -157,6 +233,11 @@ class EnvVarSpec(BaseModel):
     secret: bool = False
     description: str | None = None
 
+    @field_validator("name")
+    @classmethod
+    def validate_env_name(cls, v: str) -> str:
+        return validate_env_var_name(v)
+
 
 class MCPRuntime(StrEnum):
     """Allowed runtimes for MCP server execution (strict allowlist)."""
@@ -183,6 +264,11 @@ class MCPHandlerSpec(BaseModel):
     runtime: MCPRuntime
     package_name: str
     env_vars: list[EnvVarSpec] = Field(default_factory=list)
+
+    @field_validator("package_name")
+    @classmethod
+    def validate_package(cls, v: str) -> str:
+        return validate_mcp_package_name(v)
 
 
 class SkillHandlerSpec(BaseModel):

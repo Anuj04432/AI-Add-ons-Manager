@@ -221,24 +221,78 @@ handler_spec:
 
 ---
 
-## 10. Installation Engine
+## 10. Installation Engine Architecture (Phase 5A)
 
-The installation engine uses a **Transactional Plan Execution pattern**:
+The installation engine uses a **Declarative & Transactional Plan Execution** architecture. The core principle is that the registry describes **WHAT** an integration is, while trusted application code determines **HOW** it is installed. Metadata never directly executes commands.
 
 ```mermaid
-graph LR
-    Resolve[1. Resolve] --> Fetch[2. Fetch & Hash Check]
-    Fetch --> Plan[3. Create InstallPlan]
-    Plan --> SecCheck[4. Security Audit]
-    SecCheck --> Exec[5. Execute Steps]
-    Exec -- Failure --> Rollback[6. Rollback Stack]
-    Exec -- Success --> Record[7. Record State]
+graph TD
+    Request[Installation Request] --> Comp[Compatibility Check]
+    Comp --> Plan[Generate InstallationPlan]
+    Plan --> DryRun[Review / Dry Run]
+    DryRun --> Exec[Execute Operations]
+    Exec --> Verify[Verify System State]
+    Verify -- Success --> Commit[Commit State & Lockfile]
+    Exec -- Failure --> Rollback[Rollback Operations]
 ```
 
-### Key Components:
-- **`InstallPlan`**: An ordered list of atomic actions (e.g., `WriteFileAction`, `UpdateJsonConfigAction`).
-- **`RollbackStack`**: Each action implements an `undo()` method. If step 4 fails, steps 3, 2, and 1 execute `undo()` in reverse order to leave the user's system clean.
-- **Scope Support**: Supports `Global` (`~/.aiaddons/`) and `Workspace` (`<current_dir>/.aiaddons/`) scopes.
+### 10.1 Installation Pipeline
+1. **Request Ingestion**: Takes `IntegrationManifest`, `AgentDetectionResult`, and requested `Scope`.
+2. **Compatibility Evaluation**: `CompatibilityEngine` verifies target agent support, scope support, capabilities, and dependencies.
+3. **Plan Generation**: Type-specific installer (`MCPInstaller`, `SkillInstaller`, `PluginInstaller`, `CLIToolInstaller`) constructs an `InstallationPlan`.
+4. **Safety & Path Traversal Verification**: `plan.validate_safety()` enforces strict operation-level path validation, target root boundaries, MCP package sanitization, environment variable restrictions, configuration scope protection, and rollback metadata safety.
+5. **Dry Run / Review**: `aiaddons install <addon-id> --dry-run` displays planned changes without mutating filesystem or agent configurations.
+6. **Transactional Execution (Phase 5B)**: Atomic step execution with rollback tracking.
+
+### 10.2 Installation Plan Model (`InstallationPlan`)
+The `InstallationPlan` model is an immutable representation of planned operations:
+- `addon_id`, `addon_name`, `addon_version`: Identifies the target add-on.
+- `target_agent`, `target_agent_name`: Target AI coding agent (e.g. `claude-code`, `codex`).
+- `target_scope`: `global` or `workspace`.
+- `integration_type`: `mcp`, `skill`, `plugin`, or `cli_tool`.
+- `source`: Source specification metadata (`SourceSpec`).
+- `planned_operations`: List of declarative, typed operation models (`BaseOperation`).
+- `dependencies`: Evaluated dependency check results.
+- `warnings`: Operational or trust warnings.
+- `risk_level`: Severity rating (`LOW`, `MEDIUM`, `HIGH`).
+- `reversible`: Boolean indicating if all planned operations support rollback.
+- `rollback_info`: `RollbackMetadata` containing explicit inverse operations.
+
+### 10.3 Declarative Operation Model & Security Guarantees
+Operations represent high-level structural intent rather than arbitrary shell execution. Generic command operations (e.g., `ExecuteCommand`, `ShellCommand`, `RunScript`) are strictly forbidden.
+
+#### Security Guarantees:
+- **Mandatory Target Root & Boundary Confinement**: Every operation requires an explicit `target_root`. Future execution engines MUST canonicalize paths (`resolved_root = Path(target_root).resolve()`, `resolved_dest = (resolved_root / destination).resolve()`) and reject any operation if `resolved_dest` is outside `resolved_root`.
+- **Operation-Level Path Validation**: All operation path fields (`directory_path`, `destination_path`, `file_path`, `config_path`, `destination_dir`) reject `..` traversal sequences, POSIX absolute paths, Windows drive letters, UNC network paths, URL-encoded traversal, and null bytes.
+- **Typed Execution Payloads**: Operations contain complete execution payloads (`content: str` in `WriteFileOperation`, `value: Any` in `ModifyJsonOperation`/`ModifyYamlOperation`) rather than summaries alone.
+- **MCP Package Sanitization**: `AddMcpServerOperation.package_name` enforces strict package-name regex formatting, prohibiting argument-injection vectors (leading `-`), whitespace, shell metacharacters, or path separators.
+- **Environment Variable Restrictions**: `env_var_names` enforces valid identifier syntax (`[A-Za-z_][A-Za-z0-9_]*`) and blocks dangerous process manipulation variables (`LD_PRELOAD`, `PYTHONPATH`, `NODE_OPTIONS`, `PATH`, etc.).
+- **Configuration Scope Protection**: `ModifyJsonOperation` and `ModifyYamlOperation` block modifications to sensitive root agent configuration keys (`permissions`, `allow_all`, `security`, `telemetry`, `auto_approve`, `hooks`, `trust`).
+- **Comprehensive Rollback Safety**: `InstallationPlan.validate_safety()` validates both `planned_operations` AND `rollback_info.rollback_operations` for path traversal and shell safety.
+
+Supported typed operations:
+- **`CreateDirectoryOperation`**: Ensures target skill or plugin directories exist within `target_root`.
+- **`CopyFileOperation`**: Copies asset bundles safely.
+- **`WriteFileOperation`**: Writes structured configuration or skill definitions containing explicit `content`.
+- **`ModifyJsonOperation`**: Safely updates JSON configuration files (e.g. `mcpServers` in `~/.claude.json`) with strongly typed `value` payloads.
+- **`ModifyYamlOperation`**: Safely updates YAML configurations with strongly typed `value` payloads.
+- **`AddMcpServerOperation`**: Registers MCP server parameters (`runtime`, `package_name`, `transport`, `env_var_names`).
+- **`AddSkillOperation`**: Deploys skill markdown instructions (`SKILL.md`) and supporting files.
+- **`AddPluginReferenceOperation`**: Registers composite plugin component references.
+
+### 10.4 Transaction Model & Rollback Strategy
+Each installation is represented by an `InstallationTransaction` tracking transaction state through phases:
+`REQUESTED` → `COMPATIBILITY_CHECKED` → `PLANNED` → `REVIEWED` → `EXECUTING` → `VERIFIED` → `COMMITTED`.
+
+If an error occurs during execution, the transaction transitions to `FAILED` and triggers `RollbackMetadata.rollback_operations` in reverse sequence to restore host system state. All rollback operations are validated against the same security guardrails as forward operations.
+
+### 10.5 Dry-Run Architecture
+The CLI supports `aiaddons install <addon-id> --dry-run`:
+- Loads manifest metadata.
+- Performs agent detection and compatibility evaluation.
+- Generates the complete `InstallationPlan`.
+- Displays formatted steps in terminal without modifying configuration, downloading packages, making network calls, or launching subprocesses.
+- Running without `--dry-run` reports: `"Real installation is not implemented yet. Use --dry-run."`
 
 ---
 
@@ -263,16 +317,18 @@ If any check fails, the TUI displays an explicit "Incompatible" badge detailing 
 
 ---
 
-## 13. Security Model
+## 13. Security Model & Architecture Boundaries
 
-Security is critical. The application prevents arbitrary command execution from remote registry manifests using strict rules:
+Security is fundamental to `aiaddons`. The application prevents arbitrary command execution from remote registry manifests using strict architecture boundaries:
 
-1. **No `shell=True` Executions**: Subprocess invocations use strict argument vectors (`subprocess.run(["npx", "-y", ...])`), preventing shell injection attacks.
-2. **Strict Binary Whitelist**: Only pre-approved runtime binaries (`npx`, `uvx`, `python`, `node`, `pip`, `git`) listed in `allowed_executables` are allowed. Unapproved executables require explicit user approval.
-3. **No Shell Metacharacters**: Commands in manifests are parsed. Manifests containing operators like `;`, `&&`, `||`, `|`, `>`, `<`, `$()`, or backticks are immediately rejected.
-4. **Cryptographic Integrity**: Downloads (zip bundles, release archives) are validated against SHA-256 checksums published in the signed registry index.
-5. **Interactive Preview**: Before executing any installation, the TUI displays the exact configuration changes, file writes, and commands to be executed for user confirmation.
-6. **Secret Isolation**: Sensitive environment keys (e.g., API tokens) are flagged as `secret: true`, masked in logs/UI, and stored securely.
+1. **No Generic Command Operations**: The operation model does not support `ExecuteCommand`, `ShellCommand`, or `RunScript`. All operations are strictly typed domain models.
+2. **No `shell=True` Executions**: Any future subprocess invocations use strict argument vectors (`subprocess.run(["npx", "-y", ...])`), preventing shell injection attacks.
+3. **Strict Binary Whitelist**: Only pre-approved runtime binaries (`npx`, `uvx`, `python`, `node`, `pip`, `git`) listed in `allowed_executables` are allowed. Unapproved executables are rejected.
+4. **No Shell Metacharacters**: String fields in manifests and operations are scanned against `FORBIDDEN_SHELL_PATTERNS` (`;&||><$\``). Any match raises `SecurityValidationError`.
+5. **Path Traversal Protection**: All relative paths are validated against `validate_safe_relative_path` to prevent path traversal outside designated target root directories.
+6. **Dry-Run Isolation**: Dry-run plan generation makes no network calls, modifies no configuration files, and executes no subprocesses.
+7. **Cryptographic Integrity**: Downloads (zip bundles, release archives) are validated against SHA-256 checksums published in the signed registry index.
+8. **Secret Protection**: Sensitive environment keys (e.g., API tokens) are flagged as `secret: true`, masked in logs/UI, and stored securely.
 
 ---
 
