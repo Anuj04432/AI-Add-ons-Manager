@@ -294,6 +294,20 @@ The CLI supports `aiaddons install <addon-id> --dry-run`:
 - Displays formatted steps in terminal without modifying configuration, downloading packages, making network calls, or launching subprocesses.
 - Running without `--dry-run` reports: `"Real installation is not implemented yet. Use --dry-run."`
 
+### 10.6 Secure External Package Execution Architecture (Phase 5B.2)
+The external package execution layer (`src/aiaddons/core/execution/external/`) provides a secure, trusted execution engine for package manager operations (`npx`, `uvx`, `pip`, `npm`, `git`, `python`, `node`) required by typed installation plans.
+
+#### Architectural Principles:
+1. **Registry Metadata vs Application Execution**: Registry metadata describes **WHAT** (e.g. package `@modelcontextprotocol/server-github`), while trusted application code determines **HOW** it is executed. Metadata never supplies raw command strings.
+2. **Strict Executable Allowlist**: Only pre-approved runtime binaries (`npx`, `uvx`, `pip`, `npm`, `git`, `python`, `node`) are permitted. Resolves executable binaries dynamically via `shutil.which` and validates that the resolved binary matches the allowlist.
+3. **No Shell Invocations (`shell=False`)**: Processes are executed strictly using argument vectors (`list[str]`) passed directly to `subprocess.Popen` with `shell=False`. Neither `cmd.exe /c`, `powershell -Command`, `bash -c`, nor `shell=True` are ever used.
+4. **Windows Compatibility**: On Windows, `shutil.which` resolves native `.cmd` or `.exe` launchers (e.g. `npx.cmd`, `pip.exe`, `git.exe`) safely without launching intermediary shell wrappers.
+5. **Argument & Package Sanitization**: Every argument in a command vector is validated to reject null bytes (`\0`), shell metacharacters (`;&||><$\``), inline code evaluation flags (`--eval`, `-e`, `-c`), path traversal, and command injection attempts. Package names are validated against strict regex rules.
+6. **Environment Isolation & Secret Protection**: Custom environment variables are validated to prevent overriding restricted process manipulation variables (`LD_PRELOAD`, `PYTHONPATH`, `NODE_OPTIONS`, `PATH`, etc.). Secrets are automatically masked as `***MASKED***` in stdout, stderr, and log output.
+7. **Timeout Enforcement**: Process execution enforces an explicit timeout (default 120 seconds). Processes exceeding timeout are forcibly terminated (`proc.kill()`) and raise `ProcessTimeoutError`.
+8. **Dry-Run Integrity Guarantee**: Under `--dry-run`, `ExternalRunner.execute()` simulates execution and returns a dry-run result with zero subprocess invocations, zero network calls, and zero filesystem mutations.
+9. **Transaction & Rollback Integration**: Integrated with `InstallationTransaction` state transitions (`REQUESTED` → `EXECUTING` → `VERIFIED` → `COMMITTED`, or `FAILED` → `ROLLED_BACK`). External package installations that cannot be undone automatically without host side-effects are represented explicitly as non-reversible steps.
+
 ---
 
 ## 11. Compatibility System

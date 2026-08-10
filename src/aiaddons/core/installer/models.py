@@ -1,6 +1,7 @@
 """Pydantic domain models for the Transactional Installation Engine."""
 
 from enum import StrEnum
+from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -108,6 +109,25 @@ class RollbackMetadata(BaseModel):
     instructions: str | None = None
 
 
+def validate_target_root_string(v: str) -> str:
+    """Validate that target_root is safe and contains no metacharacters, UNC paths, or traversal."""
+    cleaned = v.strip()
+    if not cleaned:
+        raise ValueError("target_root cannot be empty.")
+    if "\0" in cleaned:
+        raise ValueError("Null byte detected in target_root.")
+    if cleaned.startswith("//") or cleaned.startswith("\\\\"):
+        raise ValueError(f"UNC path '{v}' is prohibited for target_root.")
+    for char in FORBIDDEN_SHELL_PATTERNS:
+        if char in cleaned:
+            raise ValueError(f"Shell operator '{char}' detected in target_root.")
+    normalized = cleaned.replace("\\", "/")
+    parts = Path(normalized).parts
+    if ".." in parts or any(part == ".." for part in normalized.split("/")):
+        raise ValueError(f"Traversal sequence '..' detected in target_root '{v}'.")
+    return cleaned
+
+
 class BaseOperation(BaseModel):
     """Base model for all declarative, typed installation operations.
 
@@ -129,11 +149,7 @@ class BaseOperation(BaseModel):
     @field_validator("target_root")
     @classmethod
     def validate_target_root(cls, v: str) -> str:
-        cleaned = v.strip()
-        if not cleaned:
-            raise ValueError("target_root cannot be empty.")
-        validate_safe_relative_path(cleaned)
-        return cleaned
+        return validate_target_root_string(v)
 
     @field_validator("target_path")
     @classmethod
@@ -163,12 +179,17 @@ class CopyFileOperation(BaseOperation):
     source_path: str
     destination_path: str
 
-    @field_validator("source_path", "destination_path")
+    @field_validator("source_path")
     @classmethod
-    def validate_file_paths(cls, v: str) -> str:
+    def validate_src(cls, v: str) -> str:
+        return validate_target_root_string(v)
+
+    @field_validator("destination_path")
+    @classmethod
+    def validate_dst(cls, v: str) -> str:
         res = validate_safe_relative_path(v)
         if res is None:
-            raise ValueError("File path cannot be empty.")
+            raise ValueError("destination_path cannot be empty.")
         return res
 
 
@@ -355,7 +376,7 @@ def validate_rollback_operation_safety(rb: RollbackOperation) -> None:
 
 def validate_operation_safety(op: BaseOperation) -> None:
     """Validate that an operation contains no forbidden shell syntax or unapproved command keys."""
-    validate_safe_relative_path(op.target_root)
+    validate_target_root_string(op.target_root)
     if op.target_path:
         validate_safe_relative_path(op.target_path)
 

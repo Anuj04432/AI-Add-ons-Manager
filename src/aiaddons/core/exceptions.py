@@ -42,3 +42,19 @@ class UnsupportedIntegrationTypeError(InstallationError):
 
 class InstallationPlanningError(InstallationError):
     """Error raised when generating an installation plan fails."""
+
+
+class ExternalExecutionError(InstallationError):
+    """Base exception for external process execution failures."""
+
+
+class ExecutableNotFoundError(ExternalExecutionError):
+    """Error raised when an approved runtime binary cannot be located on PATH."""
+
+
+class ProcessExecutionError(ExternalExecutionError):
+    """Error raised when an external process execution fails with a non-zero exit code."""
+
+
+class ProcessTimeoutError(ExternalExecutionError):
+    """Error raised when an external process execution times out."""
