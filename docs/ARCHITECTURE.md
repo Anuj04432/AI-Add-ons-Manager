@@ -330,6 +330,44 @@ The Phase 5B.8 secret management framework isolates, masks, and resolves environ
 6. **Strict Persistence Prohibition**: Real secret values are **NEVER** persisted to disk, transaction WAL logs (`InstallationTransaction`), installed state (`state.json`), workspace lockfiles (`aiaddons.lock`), or agent configuration files (which store template variables like `"${GITHUB_TOKEN}"`).
 7. **Dry-Run Security Guarantees**: Under `--dry-run`, `SecretResolver` avoids prompting for secrets, executes zero subprocesses, modifies zero files/WAL/lockfiles, and exposes zero secret values, rendering plan representations safe for terminal display (e.g., `<secret required>`, `<secret configured>`).
 
+### 10.9 Installation Verification — Phase 5B.9
+Phase 5B.9 introduces a dedicated post-installation verification subsystem (`src/aiaddons/core/verification/`) that validates whether an installation actually produced the expected host state before committing transaction records:
+
+> An installation is not considered committed until post-install verification succeeds.
+
+1. **Verification Architecture**:
+   ```text
+   InstallationPlan → ExecutionEngine → Installation → VerificationEngine → VerificationResult → Transaction (COMMITTED or ROLLED_BACK)
+   ```
+   `VerificationEngine` acts as an independent observer. It does not blindly trust claimed publisher verification, `InstallationPlan`, or previous installed state; it directly inspects the host filesystem and configuration state.
+
+2. **Verification Domain Models**:
+   - `VerificationStatus`: Enum representing status (`PENDING`, `PASSED`, `FAILED`, `SKIPPED`).
+   - `VerificationCheck`: Granular check result with `check_id`, `description`, `status`, `expected_value`, `actual_value`, `warning_info`, `error_info`. Configured with `extra="forbid"`. Secrets are strictly masked and never stored in `expected_value` or `actual_value`.
+   - `VerificationResult`: Aggregate decision containing `addon_id`, `addon_name`, `target_agent`, `target_scope`, `status`, `verified: bool`, `checks`, `warnings`, `errors`, and ISO `timestamp`.
+
+3. **Integration-Specific Verification Handlers**:
+   - **MCP Verification (`AddMcpServerOperation`)**: Safely resolves and parses agent configuration JSON/YAML via `verify_path_security`. Verifies entry presence in `mcpServers`, runtime command (`npx`, `uvx`, `node`, `python`), package identity in `args`, transport settings, and environment variable name references (`"${VAR_NAME}"`). Detects malformed configuration safely while preserving unrelated MCP servers and top-level configuration.
+   - **Skill Verification (`AddSkillOperation`)**: Validates skill directory existence, required `SKILL.md` presence, supporting file presence, and SHA-256 content hashes without dumping full skill contents into logs. Enforces path containment to prevent symlinks from escaping the destination directory.
+   - **Plugin Verification (`AddPluginReferenceOperation`)**: Inspects composite plugin descriptors (`plugin.json`), verifying plugin reference registration, presence of all declared component IDs, and component resolution consistency without duplicating entries.
+   - **Structural Operation Verification**: Re-checks existence and integrity of directories (`CreateDirectoryOperation`), file content SHA-256 hashes (`WriteFileOperation`, `CopyFileOperation`), and key-value path matches (`ModifyJsonOperation`, `ModifyYamlOperation`).
+
+4. **Path & Symlink Security (TOCTOU Protection)**:
+   All paths re-evaluate boundaries at verification time using `verify_path_security()`. Re-checks `resolved_dest.is_relative_to(resolved_root)` and verifies that symlink targets do not escape the target root directory, protecting against `..`, absolute path overrides, UNC paths, URL-encoded traversal, and null byte injections.
+
+5. **Transaction Lifecycle Integration & Atomic Commit Timing**:
+   Verification is fully integrated into `ExecutionEngine.execute_plan()`:
+   - Successful verification transitions the transaction phase to `VERIFIED`.
+   - Only AFTER verification succeeds are records persisted to `InstalledStateStore` (`~/.aiaddons/state.json`) and `LockfileManager` (`aiaddons.lock`).
+   - Transaction phase then transitions to `COMMITTED`.
+   - If verification fails, `ExecutionEngine` records safe failure errors (with secret values masked), skips state store and lockfile persistence, invokes the `RollbackStack`, performs post-rollback inspection (`verify_rollback`), and transitions the transaction phase to `ROLLED_BACK`.
+
+6. **Rollback Verification**:
+   `verify_rollback()` performs safe, read-only inspection after a rollback to confirm that newly created files/directories were removed and modified configuration keys were restored without executing any unsafe disk deletions.
+
+7. **Dry-Run Guarantees**:
+   Under `dry_run=True`, `VerificationEngine` executes structural plan inspection (`PLAN ONLY`), returns `VerificationResult` with check status `SKIPPED`, and performs zero subprocess executions, zero network requests, zero file mutations, zero state/lockfile persistence, and zero WAL writes.
+
 ---
 
 

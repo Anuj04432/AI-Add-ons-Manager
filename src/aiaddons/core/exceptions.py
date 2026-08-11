@@ -62,3 +62,17 @@ class ProcessExecutionError(ExternalExecutionError):
 
 class ProcessTimeoutError(ExternalExecutionError):
     """Error raised when an external process execution times out."""
+
+
+
+class VerificationError(InstallationError):
+    """Base exception for installation verification failures."""
+
+
+class VerificationFailedError(VerificationError):
+    """Exception raised when one or more verification checks fail."""
+
+
+class VerificationPathSecurityError(VerificationError, SecurityValidationError):
+    """Exception raised when verification detects path traversal or target root escape."""
+

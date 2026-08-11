@@ -41,6 +41,8 @@ from aiaddons.core.installer.models import (
 )
 from aiaddons.core.models.agent import Scope
 from aiaddons.core.models.manifest import MCPRuntime
+from aiaddons.core.verification.engine import VerificationEngine
+from aiaddons.core.verification.models import VerificationStatus
 from aiaddons.state.lockfile import LockfileAddonEntry, LockfileManager
 from aiaddons.state.store import InstalledAddonRecord, InstalledStateStore
 from aiaddons.state.transaction import TransactionWALManager
@@ -104,11 +106,14 @@ class ExecutionEngine:
         wal_manager: TransactionWALManager | None = None,
         state_store: InstalledStateStore | None = None,
         lockfile_manager: LockfileManager | None = None,
+        verification_engine: VerificationEngine | None = None,
     ) -> None:
         self.external_runner = external_runner or ExternalRunner()
         self.wal_manager = wal_manager
         self.state_store = state_store
         self.lockfile_manager = lockfile_manager
+        self.verification_engine = verification_engine or VerificationEngine()
+
 
     def execute_plan(
         self,
@@ -203,8 +208,19 @@ class ExecutionEngine:
                     error_message=err_msg,
                 )
 
-        if not self._verify_executed_operations(executed_results, dry_run=dry_run):
-            err_msg = "Post-execution verification failed: created assets missing or invalid."
+        verification_res = self.verification_engine.verify_plan(
+            plan=plan,
+            dry_run=dry_run,
+            secret_values=secret_values,
+        )
+
+        if not verification_res.verified or verification_res.status == VerificationStatus.FAILED:
+            err_msg = (
+                "; ".join(verification_res.errors)
+                if verification_res.errors
+                else "Post-execution verification failed: created assets missing or invalid."
+            )
+            err_msg = mask_secrets_in_text(err_msg, secrets_list)
             if transaction:
                 transaction.phase = TransactionPhase.FAILED
                 transaction.error_message = err_msg
@@ -212,6 +228,7 @@ class ExecutionEngine:
                     self.wal_manager.write_transaction(transaction)
 
             rolled_back_results = self._rollback_executed_stack(rollback_stack)
+            self.verification_engine.verify_rollback(plan)
 
             if transaction:
                 transaction.phase = TransactionPhase.ROLLED_BACK
