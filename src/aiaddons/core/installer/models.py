@@ -297,6 +297,10 @@ class AddSkillOperation(BaseOperation):
     skill_file: str
     destination_dir: str
     supporting_files: list[str] = Field(default_factory=list)
+    source_dir: str | None = None
+    skill_content: str | None = None
+    supporting_contents: dict[str, str] = Field(default_factory=dict)
+
 
     @field_validator("destination_dir", "skill_file")
     @classmethod

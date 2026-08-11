@@ -308,7 +308,19 @@ The external package execution layer (`src/aiaddons/core/execution/external/`) p
 8. **Dry-Run Integrity Guarantee**: Under `--dry-run`, `ExternalRunner.execute()` simulates execution and returns a dry-run result with zero subprocess invocations, zero network calls, and zero filesystem mutations.
 9. **Transaction & Rollback Integration**: Integrated with `InstallationTransaction` state transitions (`REQUESTED` → `EXECUTING` → `VERIFIED` → `COMMITTED`, or `FAILED` → `ROLLED_BACK`). External package installations that cannot be undone automatically without host side-effects are represented explicitly as non-reversible steps.
 
+### 10.7 Unified Transactional Pipeline & Phase 5B Consolidation
+The Phase 5B.4–5B.7 consolidation unifies all agent configuration mutations, skill bundle deployments, transaction state tracking, and local state persistence into a single atomic execution pipeline:
+
+1. **Unified Agent Adapter Pipeline**: All configuration mutations for Claude Code (`ClaudeCodeAdapter`) and OpenAI Codex (`CodexAdapter`) across Global (`~/.claude.json`, `~/.codex/`) and Workspace (`.claude.json`, `.codex/`) scopes execute via `InstallationEngine` → `InstallationPlan` → `ExecutionEngine` → `AgentAdapter` → Atomic file primitives. No adapter independently mutates filesystem state outside the transaction pipeline.
+2. **Real Skill Bundle Deployment**: `SkillInstaller` and `ExecutionEngine` extract and deploy real skill bundles (`SKILL.md` and supporting files) directly from `manifest.source.path`. All file paths are strictly validated against target root boundaries (`verify_safe_target_path`), prohibiting path traversal, null bytes, and symlink escape vectors.
+3. **Crash-Safe Write-Ahead Log (WAL)**: `TransactionWALManager` persists durable transaction logs at `~/.aiaddons/transactions/<tx_id>.json`. The WAL records atomic state transitions across:
+   `REQUESTED` → `COMPATIBILITY_CHECKED` → `PLANNED` → `REVIEWED` → `EXECUTING` → `VERIFIED` → `COMMITTED` (or `FAILED` → `ROLLED_BACK`).
+   Interrupted transactions left in `EXECUTING` state are automatically detected and safely rolled back via `TransactionWALManager.recover_interrupted_transaction()`.
+4. **Atomic State & Lockfile Persistence**: Upon successful verification and transaction commit, `ExecutionEngine` updates the central installed state database (`InstalledStateStore` in `~/.aiaddons/state.json`) and the workspace lockfile (`LockfileManager` in `<workspace>/aiaddons.lock`) atomically using atomic tempfile replace operations (`_atomic_write_file`).
+5. **Dry-Run Side-Effect Prevention**: Running under `--dry-run` guarantees zero mutations to agent configs, zero skill file copies, zero state database writes, zero lockfile entries, and zero transaction log writes.
+
 ---
+
 
 ## 11. Compatibility System
 

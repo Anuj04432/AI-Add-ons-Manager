@@ -34,6 +34,14 @@ class CodexAdapter:
             return ws_agents
         return ws_dir
 
+    def get_skill_directory(self, scope: Scope, project_path: Path | None = None) -> Path:
+        """Get the skill installation directory for OpenAI Codex based on scope."""
+        if scope == Scope.GLOBAL:
+            return Path.home() / ".codex" / "skills"
+        base_dir = project_path if project_path is not None else Path.cwd()
+        return base_dir / ".agents" / "skills"
+
+
     def detect(self, project_path: Path | None = None) -> AgentDetectionResult:
         """Detect OpenAI Codex installation status, binary path, version, and config location."""
         exec_path = find_executable("codex")

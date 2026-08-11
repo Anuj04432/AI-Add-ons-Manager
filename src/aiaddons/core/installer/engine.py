@@ -25,6 +25,7 @@ from aiaddons.integrations.cli_tool import CLIToolInstaller
 from aiaddons.integrations.mcp import MCPInstaller
 from aiaddons.integrations.plugin import PluginInstaller
 from aiaddons.integrations.skill import SkillInstaller
+from aiaddons.state.transaction import TransactionWALManager
 
 if TYPE_CHECKING:
     from aiaddons.registry.registry import Registry
@@ -38,9 +39,11 @@ class InstallationEngine:
         installers: list[BaseIntegrationInstaller] | None = None,
         compatibility_engine: CompatibilityEngine | None = None,
         registry: Registry | None = None,
+        wal_manager: TransactionWALManager | None = None,
     ) -> None:
         self._compatibility_engine = compatibility_engine or CompatibilityEngine()
         self._registry = registry
+        self._wal_manager = wal_manager
         self._installers: dict[IntegrationType, BaseIntegrationInstaller] = {}
 
         if installers is None:
@@ -168,9 +171,10 @@ class InstallationEngine:
         tx_id = f"tx_{uuid.uuid4().hex[:12]}"
         compat = self._compatibility_engine.evaluate(manifest, agent, scope)
 
+        tx: InstallationTransaction
         try:
             plan = self.generate_plan(manifest, agent, scope, registry=registry)
-            return InstallationTransaction(
+            tx = InstallationTransaction(
                 transaction_id=tx_id,
                 phase=TransactionPhase.PLANNED,
                 manifest=manifest,
@@ -181,7 +185,7 @@ class InstallationEngine:
                 is_dry_run=True,
             )
         except Exception as exc:
-            return InstallationTransaction(
+            tx = InstallationTransaction(
                 transaction_id=tx_id,
                 phase=TransactionPhase.FAILED,
                 manifest=manifest,
@@ -192,3 +196,8 @@ class InstallationEngine:
                 is_dry_run=True,
                 error_message=str(exc),
             )
+
+        if self._wal_manager:
+            self._wal_manager.write_transaction(tx)
+        return tx
+

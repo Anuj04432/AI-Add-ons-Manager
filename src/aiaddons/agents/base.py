@@ -25,3 +25,8 @@ class BaseAgentAdapter(Protocol):
     def supports_capability(self, capability: AgentCapability) -> bool:
         """Check if this agent supports a specific integration capability."""
         ...
+
+    def get_skill_directory(self, scope: Scope, project_path: Path | None = None) -> Path:
+        """Get canonical skill installation directory for the specified scope."""
+        ...
+

@@ -1,5 +1,7 @@
 """Execution engine for Phase 5B safe structural and external package execution operations."""
 
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from aiaddons.core.exceptions import InstallationError, SecurityValidationError
@@ -36,7 +38,11 @@ from aiaddons.core.installer.models import (
     TransactionPhase,
     WriteFileOperation,
 )
+from aiaddons.core.models.agent import Scope
 from aiaddons.core.models.manifest import MCPRuntime
+from aiaddons.state.lockfile import LockfileAddonEntry, LockfileManager
+from aiaddons.state.store import InstalledAddonRecord, InstalledStateStore
+from aiaddons.state.transaction import TransactionWALManager
 
 
 class RollbackAction:
@@ -91,8 +97,17 @@ class ExecutionEngine:
         OperationType.ADD_PLUGIN_REFERENCE,
     }
 
-    def __init__(self, external_runner: ExternalRunner | None = None) -> None:
+    def __init__(
+        self,
+        external_runner: ExternalRunner | None = None,
+        wal_manager: TransactionWALManager | None = None,
+        state_store: InstalledStateStore | None = None,
+        lockfile_manager: LockfileManager | None = None,
+    ) -> None:
         self.external_runner = external_runner or ExternalRunner()
+        self.wal_manager = wal_manager
+        self.state_store = state_store
+        self.lockfile_manager = lockfile_manager
 
     def execute_plan(
         self,
@@ -112,6 +127,8 @@ class ExecutionEngine:
             if transaction:
                 transaction.phase = TransactionPhase.FAILED
                 transaction.error_message = err_msg
+                if self.wal_manager:
+                    self.wal_manager.write_transaction(transaction)
 
             return ExecutionResult(
                 addon_id=plan.addon_id,
@@ -123,6 +140,8 @@ class ExecutionEngine:
 
         if transaction:
             transaction.phase = TransactionPhase.EXECUTING
+            if self.wal_manager:
+                self.wal_manager.write_transaction(transaction)
 
         executed_results: list[OperationExecutionResult] = []
         rolled_back_results: list[OperationExecutionResult] = []
@@ -157,11 +176,15 @@ class ExecutionEngine:
                 if transaction:
                     transaction.phase = TransactionPhase.FAILED
                     transaction.error_message = err_msg
+                    if self.wal_manager:
+                        self.wal_manager.write_transaction(transaction)
 
                 rolled_back_results = self._rollback_executed_stack(rollback_stack)
 
                 if transaction:
                     transaction.phase = TransactionPhase.ROLLED_BACK
+                    if self.wal_manager:
+                        self.wal_manager.write_transaction(transaction)
 
                 return ExecutionResult(
                     addon_id=plan.addon_id,
@@ -178,11 +201,15 @@ class ExecutionEngine:
             if transaction:
                 transaction.phase = TransactionPhase.FAILED
                 transaction.error_message = err_msg
+                if self.wal_manager:
+                    self.wal_manager.write_transaction(transaction)
 
             rolled_back_results = self._rollback_executed_stack(rollback_stack)
 
             if transaction:
                 transaction.phase = TransactionPhase.ROLLED_BACK
+                if self.wal_manager:
+                    self.wal_manager.write_transaction(transaction)
 
             return ExecutionResult(
                 addon_id=plan.addon_id,
@@ -196,7 +223,67 @@ class ExecutionEngine:
 
         if transaction:
             transaction.phase = TransactionPhase.VERIFIED
+            if self.wal_manager:
+                self.wal_manager.write_transaction(transaction)
+
+        # Atomic installed state and lockfile persistence upon commit
+        if not dry_run:
+            try:
+                now_str = datetime.now(UTC).isoformat()
+                installed_files = [r.target_path for r in executed_results if r.target_path]
+                if self.state_store:
+                    record = InstalledAddonRecord(
+                        addon_id=plan.addon_id,
+                        name=plan.addon_name,
+                        version=plan.addon_version,
+                        target_agent=plan.target_agent,
+                        scope=plan.target_scope,
+                        integration_type=plan.integration_type,
+                        installed_at=now_str,
+                        installed_files=installed_files,
+                    )
+                    self.state_store.record_installation(record)
+
+                if self.lockfile_manager and plan.target_scope == Scope.WORKSPACE:
+                    entry = LockfileAddonEntry(
+                        addon_id=plan.addon_id,
+                        name=plan.addon_name,
+                        version=plan.addon_version,
+                        integration_type=plan.integration_type,
+                        target_agent=plan.target_agent,
+                        checksum=plan.source.checksum,
+                        installed_at=now_str,
+                    )
+                    self.lockfile_manager.update_lockfile(Path.cwd(), entry)
+            except Exception as exc:
+                err_msg = f"State persistence error: {exc}"
+                if transaction:
+                    transaction.phase = TransactionPhase.FAILED
+                    transaction.error_message = err_msg
+                    if self.wal_manager:
+                        self.wal_manager.write_transaction(transaction)
+
+                rolled_back_results = self._rollback_executed_stack(rollback_stack)
+
+                if transaction:
+                    transaction.phase = TransactionPhase.ROLLED_BACK
+                    if self.wal_manager:
+                        self.wal_manager.write_transaction(transaction)
+
+                return ExecutionResult(
+                    addon_id=plan.addon_id,
+                    target_agent=plan.target_agent,
+                    scope=plan.target_scope,
+                    status=ExecutionStatus.ROLLED_BACK,
+                    executed_operations=executed_results,
+                    rolled_back_operations=rolled_back_results,
+                    error_message=err_msg,
+                )
+
+        if transaction:
             transaction.phase = TransactionPhase.COMMITTED
+            if self.wal_manager:
+                self.wal_manager.write_transaction(transaction)
 
         return ExecutionResult(
             addon_id=plan.addon_id,
@@ -205,6 +292,7 @@ class ExecutionEngine:
             status=ExecutionStatus.SUCCESS,
             executed_operations=executed_results,
         )
+
 
     def _dispatch_operation(
         self, op: BaseOperation, dry_run: bool = False
@@ -361,16 +449,101 @@ class ExecutionEngine:
                 )
             )
 
-            for supp in op.supporting_files:
-                supp_path = f"{op.destination_dir}/{supp}"
-                verify_safe_target_path(op.target_root, supp_path)
+            # Resolve skill file content
+            resolved_skill_content: str
+            if op.skill_content is not None:
+                resolved_skill_content = op.skill_content
+            elif op.source_dir:
+                src_dir_path = Path(op.source_dir).expanduser().resolve()
+                if not src_dir_path.exists() or not src_dir_path.is_dir():
+                    msg = (
+                        f"Skill source directory '{op.source_dir}' does not exist"
+                        " or is not a directory."
+                    )
+                    raise InstallationError(msg)
 
-            if not dest_file_path.exists():
-                skill_content = f"# Skill: {op.skill_name}\n\nInstructions for {op.skill_name}."
+                src_skill_file = (src_dir_path / op.skill_file).resolve()
+                if not src_skill_file.is_relative_to(src_dir_path):
+                    msg = (
+                        f"Security violation: Skill file '{op.skill_file}' escapes"
+                        f" source directory '{src_dir_path}'."
+                    )
+                    raise SecurityValidationError(msg)
+                if not src_skill_file.exists() or not src_skill_file.is_file():
+                    msg = (
+                        f"Required skill file '{op.skill_file}' missing from source"
+                        f" directory '{src_dir_path}'."
+                    )
+                    raise InstallationError(msg)
+                if src_skill_file.is_symlink():
+                    sym_target = src_skill_file.resolve()
+                    if not sym_target.is_relative_to(src_dir_path):
+                        msg = (
+                            f"Security violation: Symlink skill file '{op.skill_file}'"
+                            " escapes source directory."
+                        )
+                        raise SecurityValidationError(msg)
+
+                resolved_skill_content = src_skill_file.read_text(encoding="utf-8")
+            else:
+                resolved_skill_content = (
+                    f"# Skill: {op.skill_name}\n\nInstructions for {op.skill_name}."
+                )
+
+            if "\0" in resolved_skill_content:
+                raise SecurityValidationError("Null byte detected in skill file content.")
+
+            atomic_write_file_primitive(
+                target_root=op.target_root,
+                file_path=skill_file_path,
+                content=resolved_skill_content,
+                overwrite=True,
+            )
+
+            # Handle supporting files
+            for supp in op.supporting_files:
+                supp_dest_path = f"{op.destination_dir}/{supp}"
+                verify_safe_target_path(op.target_root, supp_dest_path)
+
+                supp_content: str
+                if supp in op.supporting_contents:
+                    supp_content = op.supporting_contents[supp]
+                elif op.source_dir:
+                    src_dir_path = Path(op.source_dir).expanduser().resolve()
+                    src_supp_file = (src_dir_path / supp).resolve()
+                    if not src_supp_file.is_relative_to(src_dir_path):
+                        msg = (
+                            f"Security violation: Supporting file '{supp}' escapes"
+                            " source directory."
+                        )
+                        raise SecurityValidationError(msg)
+                    if not src_supp_file.exists() or not src_supp_file.is_file():
+                        msg = (
+                            f"Supporting file '{supp}' missing from source"
+                            f" directory '{src_dir_path}'."
+                        )
+                        raise InstallationError(msg)
+                    if src_supp_file.is_symlink():
+                        sym_target = src_supp_file.resolve()
+                        if not sym_target.is_relative_to(src_dir_path):
+                            msg = (
+                                "Security violation: Supporting file symlink"
+                                f" '{supp}' escapes source directory."
+                            )
+                            raise SecurityValidationError(msg)
+                    supp_content = src_supp_file.read_text(encoding="utf-8")
+                else:
+                    supp_content = f"# Supporting file '{supp}' for skill '{op.skill_name}'\n"
+
+                if "\0" in supp_content:
+                    msg = f"Null byte detected in supporting file '{supp}'."
+                    raise SecurityValidationError(msg)
+
+
                 atomic_write_file_primitive(
                     target_root=op.target_root,
-                    file_path=skill_file_path,
-                    content=skill_content,
+                    file_path=supp_dest_path,
+                    content=supp_content,
                     overwrite=True,
                 )
 
@@ -380,6 +553,7 @@ class ExecutionEngine:
                 target_path=skill_dest_dir,
                 existed_before=existed,
             )
+
 
         elif isinstance(op, AddPluginReferenceOperation):
             _, dest = verify_safe_target_path(op.target_root, op.config_path)

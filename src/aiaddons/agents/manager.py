@@ -25,6 +25,15 @@ class AgentDetectionManager:
         """Register a new agent adapter."""
         self._adapters.append(adapter)
 
+    def get_adapter(self, agent_id: str) -> BaseAgentAdapter | None:
+        """Retrieve registered adapter for a given agent ID."""
+        aid = agent_id.lower()
+        for adapter in self._adapters:
+            if adapter.agent_id.lower() == aid:
+                return adapter
+        return None
+
+
     def detect_agents(self, project_path: Path | None = None) -> dict[str, AgentDetectionResult]:
         """Detect all registered agents and return results mapped by agent ID."""
         results: dict[str, AgentDetectionResult] = {}

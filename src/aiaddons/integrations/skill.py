@@ -8,7 +8,6 @@ from aiaddons.core.installer.models import (
     RiskLevel,
     RollbackMetadata,
     RollbackOperation,
-    WriteFileOperation,
 )
 from aiaddons.core.models.agent import AgentDetectionResult, Scope
 from aiaddons.core.models.manifest import IntegrationManifest, IntegrationType
@@ -81,28 +80,20 @@ class SkillInstaller(BaseIntegrationInstaller):
             reversible=True,
         )
 
+        source_dir = manifest.source.path if manifest.source else None
+
         add_skill_op = AddSkillOperation(
             description=f"Deploy skill '{manifest.name}' ({spec.skill_file}) to '{dest_dir}'",
             target_root=target_root,
-            skill_name=manifest.id,
+            skill_name=manifest.name,
             skill_file=spec.skill_file,
             destination_dir=dest_dir,
             supporting_files=spec.supporting_files,
+            source_dir=source_dir,
             target_path=dest_dir,
             reversible=True,
         )
 
-        skill_content = f"# Skill: {manifest.name}\n\nSkill instructions for {manifest.name}."
-        write_file_op = WriteFileOperation(
-            description=f"Write skill file '{spec.skill_file}' inside '{dest_dir}'",
-            target_root=target_root,
-            file_path=f"{dest_dir}/{spec.skill_file}",
-            content=skill_content,
-            content_summary=f"Skill instructions for {manifest.name}",
-            target_path=f"{dest_dir}/{spec.skill_file}",
-            overwrite=True,
-            reversible=True,
-        )
 
         rollback_info = RollbackMetadata(
             reversible=True,
@@ -127,10 +118,11 @@ class SkillInstaller(BaseIntegrationInstaller):
             target_scope=scope,
             integration_type=manifest.integration_type,
             source=manifest.source,
-            planned_operations=[create_dir_op, add_skill_op, write_file_op],
+            planned_operations=[create_dir_op, add_skill_op],
             dependencies=compatibility.dependencies,
             warnings=compatibility.warnings,
             risk_level=RiskLevel.LOW,
             reversible=True,
             rollback_info=rollback_info,
         )
+

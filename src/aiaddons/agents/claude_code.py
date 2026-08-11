@@ -37,6 +37,14 @@ class ClaudeCodeAdapter:
             return ws_dir
         return ws_json
 
+    def get_skill_directory(self, scope: Scope, project_path: Path | None = None) -> Path:
+        """Get the skill installation directory for Claude Code based on scope."""
+        if scope == Scope.GLOBAL:
+            return Path.home() / ".claude" / "skills"
+        base_dir = project_path if project_path is not None else Path.cwd()
+        return base_dir / ".claude" / "skills"
+
+
     def detect(self, project_path: Path | None = None) -> AgentDetectionResult:
         """Detect Claude Code installation status, binary path, version, and config location."""
         exec_path = find_executable("claude")

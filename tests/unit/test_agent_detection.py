@@ -173,6 +173,10 @@ def test_detection_manager_handles_exception_in_adapter() -> None:
         def supports_capability(self, capability: AgentCapability) -> bool:
             return False
 
+        def get_skill_directory(self, scope: Scope, project_path: Path | None = None) -> Path:
+            return Path("/tmp/faulty/skills")
+
+
     manager = AgentDetectionManager(adapters=[FaultyAdapter()])
     results = manager.detect_agents()
 
