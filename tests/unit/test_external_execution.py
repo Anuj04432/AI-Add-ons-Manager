@@ -110,7 +110,12 @@ def test_runtime_adapters_argument_construction() -> None:
     )
     git_vec = git_adapter.build_command_vector(git_req)
     assert git_vec == [
-        "git", "clone", "--depth", "1", "https://github.com/example/repo.git", "skills/repo"
+        "git",
+        "clone",
+        "--depth",
+        "1",
+        "https://github.com/example/repo.git",
+        "skills/repo",
     ]
 
 

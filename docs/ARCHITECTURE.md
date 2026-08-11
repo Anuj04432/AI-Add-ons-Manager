@@ -99,9 +99,9 @@ All target AI agents implement a common abstract interface:
 
 ```python
 class BaseAgentAdapter(Protocol):
-    id: str           # e.g., "claude-code", "codex"
-    name: str         # e.g., "Claude Code", "OpenAI Codex"
-    
+    id: str  # e.g., "claude-code", "codex"
+    name: str  # e.g., "Claude Code", "OpenAI Codex"
+
     def detect(self) -> AgentDetectionResult: ...
     def get_config_path(self, scope: Scope) -> Path: ...
     def supports_integration(self, integration_type: IntegrationType) -> bool: ...
@@ -318,6 +318,17 @@ The Phase 5B.4–5B.7 consolidation unifies all agent configuration mutations, s
    Interrupted transactions left in `EXECUTING` state are automatically detected and safely rolled back via `TransactionWALManager.recover_interrupted_transaction()`.
 4. **Atomic State & Lockfile Persistence**: Upon successful verification and transaction commit, `ExecutionEngine` updates the central installed state database (`InstalledStateStore` in `~/.aiaddons/state.json`) and the workspace lockfile (`LockfileManager` in `<workspace>/aiaddons.lock`) atomically using atomic tempfile replace operations (`_atomic_write_file`).
 5. **Dry-Run Side-Effect Prevention**: Running under `--dry-run` guarantees zero mutations to agent configs, zero skill file copies, zero state database writes, zero lockfile entries, and zero transaction log writes.
+
+### 10.8 Secure Secret Management — Phase 5B.8
+The Phase 5B.8 secret management framework isolates, masks, and resolves environment secrets with strict security guarantees:
+
+1. **Manifest Secret Declarations**: Add-on manifests declare environment variable requirements dynamically using `EnvVarSpec` (`name`, `secret: bool`, `required: bool`, `description`). Manifests specify *that* a secret is required, but **NEVER** contain actual secret values or plaintext secret fields (`secret_value`, `token`, `password`, `api_key_value`).
+2. **Secret Resolution Layer (`src/aiaddons/core/secrets/`)**: `SecretResolver` handles secret lookup against process environment variables (`os.environ`) and secure interactive prompts (`InputProvider` using `getpass` for hidden, no-echo terminal input). Optional secrets (`required: False`) are resolved as `OPTIONAL_MISSING` without prompting or errors. Missing required secrets in non-interactive environments raise `SecretResolutionError`. Arbitrary disk scanning (`.env`, shell history, browser data, credential databases) is strictly prohibited.
+3. **In-Memory Secret Lifecycle**: Resolved secret values exist **ONLY in memory** (`ResolvedSecret.value` with `Field(exclude=True, repr=False)`) for the minimal duration required for process execution and are discarded immediately afterward.
+4. **Environment Isolation**: External processes executed via `ExternalRunner` receive only the environment variables declared in `op.env_var_names` for that specific operation. Secrets belonging to one add-on are never leaked to unrelated add-ons. Manifests are prohibited from requesting or overriding restricted dangerous environment variables (`LD_PRELOAD`, `PYTHONPATH`, `NODE_OPTIONS`, `PATH`, `HOME`, `USERPROFILE`, `SUDO_USER`, etc.).
+5. **Output & Exception Masking**: All resolved secret values are registered with `mask_secrets_in_text()`. Any occurrence of a secret value in `stdout`, `stderr`, exception tracebacks, `ExecutionResult`, `OperationExecutionResult`, or CLI logs is replaced with `***MASKED***` before display or logging.
+6. **Strict Persistence Prohibition**: Real secret values are **NEVER** persisted to disk, transaction WAL logs (`InstallationTransaction`), installed state (`state.json`), workspace lockfiles (`aiaddons.lock`), or agent configuration files (which store template variables like `"${GITHUB_TOKEN}"`).
+7. **Dry-Run Security Guarantees**: Under `--dry-run`, `SecretResolver` avoids prompting for secrets, executes zero subprocesses, modifies zero files/WAL/lockfiles, and exposes zero secret values, rendering plan representations safe for terminal display (e.g., `<secret required>`, `<secret configured>`).
 
 ---
 

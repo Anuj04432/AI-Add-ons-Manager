@@ -57,9 +57,7 @@ handler_spec:
 
 def test_cli_check_command(sample_registry_dir: Path) -> None:
     """Test `aiaddons check github-mcp` execution."""
-    result = runner.invoke(
-        app, ["check", "github-mcp", "--registry-dir", str(sample_registry_dir)]
-    )
+    result = runner.invoke(app, ["check", "github-mcp", "--registry-dir", str(sample_registry_dir)])
     assert result.exit_code == 0
     assert "Compatibility Evaluation for 'GitHub MCP Server'" in result.stdout
     assert "Requested Scope: workspace" in result.stdout

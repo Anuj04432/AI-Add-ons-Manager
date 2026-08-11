@@ -51,9 +51,7 @@ def mcp_manifest(dummy_checksum: str) -> IntegrationManifest:
                     "transport": "stdio",
                     "runtime": "npx",
                     "package_name": "@modelcontextprotocol/server-github",
-                    "env_vars": [
-                        {"name": "GITHUB_PAT", "required": True, "secret": True}
-                    ],
+                    "env_vars": [{"name": "GITHUB_PAT", "required": True, "secret": True}],
                 }
             },
         }
@@ -162,9 +160,7 @@ def test_mcp_update_behavior_preserves_existing_servers(
     """Verify MCP installation updates/replaces target server, preserving other servers."""
     config_file = tmp_path / ".claude.json"
     existing_config = {
-        "mcpServers": {
-            "existing-server": {"command": "uvx", "args": ["existing-mcp"]}
-        },
+        "mcpServers": {"existing-server": {"command": "uvx", "args": ["existing-mcp"]}},
         "unrelated_setting": "true",
     }
     config_file.write_text(json.dumps(existing_config), encoding="utf-8")

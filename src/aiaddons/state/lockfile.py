@@ -34,7 +34,6 @@ def _atomic_write_file(dir_path: Path, filename: str, content: str) -> Path:
         raise InstallationError(f"Atomic write failed for '{dest_path}': {err}") from err
 
 
-
 class LockfileAddonEntry(BaseModel):
     """Lockfile entry representing an installed workspace add-on."""
 
@@ -105,8 +104,6 @@ class LockfileManager:
             _atomic_write_file(resolved_ws, self.LOCKFILE_NAME, yaml_content)
             return True
         return False
-
-
 
     def get_entries(self, workspace_dir: Path) -> list[LockfileAddonEntry]:
         """Get all add-on entries from workspace lockfile."""

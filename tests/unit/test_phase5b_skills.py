@@ -195,7 +195,6 @@ def test_skill_symlink_escape_rejection(tmp_path: Path) -> None:
     assert res.status == ExecutionStatus.ROLLED_BACK
     assert "Security violation" in (res.error_message or "")
 
-
     exec_engine = ExecutionEngine()
     res = exec_engine.execute_plan(plan, dry_run=False)
 

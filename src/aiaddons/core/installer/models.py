@@ -301,7 +301,6 @@ class AddSkillOperation(BaseOperation):
     skill_content: str | None = None
     supporting_contents: dict[str, str] = Field(default_factory=dict)
 
-
     @field_validator("destination_dir", "skill_file")
     @classmethod
     def validate_skill_paths(cls, v: str) -> str:

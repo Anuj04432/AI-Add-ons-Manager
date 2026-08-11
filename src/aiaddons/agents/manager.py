@@ -33,7 +33,6 @@ class AgentDetectionManager:
                 return adapter
         return None
 
-
     def detect_agents(self, project_path: Path | None = None) -> dict[str, AgentDetectionResult]:
         """Detect all registered agents and return results mapped by agent ID."""
         results: dict[str, AgentDetectionResult] = {}

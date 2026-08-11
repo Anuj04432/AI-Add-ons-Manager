@@ -92,9 +92,11 @@ def validate_environment_dict(env: dict[str, str]) -> dict[str, str]:
 
 
 def mask_secrets_in_text(text: str, secrets: list[str]) -> str:
-    """Mask secret values in stdout, stderr, or logs."""
+    """Mask secret values in stdout, stderr, exception messages, or logs."""
+    if not text:
+        return text
     masked = text
     for secret in secrets:
-        if secret and len(secret) > 2:
+        if secret:
             masked = masked.replace(secret, "***MASKED***")
     return masked

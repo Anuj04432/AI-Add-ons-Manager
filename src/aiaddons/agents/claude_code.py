@@ -44,7 +44,6 @@ class ClaudeCodeAdapter:
         base_dir = project_path if project_path is not None else Path.cwd()
         return base_dir / ".claude" / "skills"
 
-
     def detect(self, project_path: Path | None = None) -> AgentDetectionResult:
         """Detect Claude Code installation status, binary path, version, and config location."""
         exec_path = find_executable("claude")

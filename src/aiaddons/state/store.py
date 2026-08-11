@@ -34,7 +34,6 @@ def _atomic_write_file(dir_path: Path, filename: str, content: str) -> Path:
         raise InstallationError(f"Atomic write failed for '{dest_path}': {err}") from err
 
 
-
 class InstalledAddonRecord(BaseModel):
     """Metadata record representing an installed add-on."""
 
@@ -103,7 +102,6 @@ class InstalledStateStore:
             _atomic_write_file(self.store_dir, self.state_file_name, content)
             return True
         return False
-
 
     def get_installed(
         self,

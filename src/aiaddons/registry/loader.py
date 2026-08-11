@@ -92,9 +92,7 @@ class RegistryLoader:
             try:
                 manifest = self.load_file(file_path)
                 if manifest.id in manifests:
-                    errors.append(
-                        f"Duplicate add-on ID '{manifest.id}' in '{file_path}'."
-                    )
+                    errors.append(f"Duplicate add-on ID '{manifest.id}' in '{file_path}'.")
                 else:
                     manifests[manifest.id] = manifest
             except ManifestValidationError as exc:

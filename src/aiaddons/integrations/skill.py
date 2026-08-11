@@ -94,7 +94,6 @@ class SkillInstaller(BaseIntegrationInstaller):
             reversible=True,
         )
 
-
         rollback_info = RollbackMetadata(
             reversible=True,
             rollback_operations=[
@@ -125,4 +124,3 @@ class SkillInstaller(BaseIntegrationInstaller):
             reversible=True,
             rollback_info=rollback_info,
         )
-

@@ -45,9 +45,7 @@ class AgentDetectionResult(BaseModel):
     global_config_path: str | None = None
     workspace_config_path: str | None = None
     config_path: str | None = None
-    supported_scopes: list[Scope] = Field(
-        default_factory=lambda: [Scope.GLOBAL, Scope.WORKSPACE]
-    )
+    supported_scopes: list[Scope] = Field(default_factory=lambda: [Scope.GLOBAL, Scope.WORKSPACE])
     capabilities: list[AgentCapability] = Field(default_factory=list)
     detection_error: str | None = None
 

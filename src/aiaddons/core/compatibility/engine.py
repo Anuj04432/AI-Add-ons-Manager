@@ -132,9 +132,7 @@ class CompatibilityEngine:
         targets = [t.lower() for t in manifest.target_agents]
         agent_id_lower = agent.agent_id.lower()
         if "*" not in targets and agent_id_lower not in targets:
-            reasons.append(
-                f"Add-on '{manifest.name}' does not list target agent '{agent.name}'."
-            )
+            reasons.append(f"Add-on '{manifest.name}' does not list target agent '{agent.name}'.")
             unsupported_reqs.append(f"Target agent: {agent.name}")
 
         # 2. Scope Compatibility Check

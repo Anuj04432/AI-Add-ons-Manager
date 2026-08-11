@@ -116,6 +116,7 @@ class TransactionWALManager:
 
         if execution_engine is None:
             from aiaddons.core.execution.engine import ExecutionEngine
+
             engine = ExecutionEngine()
         else:
             engine = execution_engine
@@ -132,4 +133,3 @@ class TransactionWALManager:
 
         self.write_transaction(tx)
         return tx
-

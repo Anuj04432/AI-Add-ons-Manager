@@ -87,9 +87,7 @@ class MCPInstaller(BaseIntegrationInstaller):
         raw_config_path = agent.get_config_path_for_scope(scope)
         if not raw_config_path:
             raw_config_path = (
-                f".{agent.agent_id}.json"
-                if scope == Scope.GLOBAL
-                else f".{agent.agent_id}.json"
+                f".{agent.agent_id}.json" if scope == Scope.GLOBAL else f".{agent.agent_id}.json"
             )
 
         config_path = make_relative_config_path(raw_config_path, scope)

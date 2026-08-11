@@ -132,16 +132,18 @@ class ExternalRunner:
                 except Exception:
                     pass
                 msg = f"External process '{runtime}' timed out after {request.timeout} seconds."
-                raise ProcessTimeoutError(msg) from err
+                masked_msg = mask_secrets_in_text(msg, secret_values)
+                raise ProcessTimeoutError(masked_msg) from err
         except ProcessTimeoutError:
             raise
         except (OSError, subprocess.SubprocessError) as err:
             msg = f"Subprocess launch error for '{runtime}': {err}"
-            raise ProcessExecutionError(msg) from err
+            masked_msg = mask_secrets_in_text(msg, secret_values)
+            raise ProcessExecutionError(masked_msg) from err
 
         stdout_masked = mask_secrets_in_text(stdout_raw, secret_values)
         stderr_masked = mask_secrets_in_text(stderr_raw, secret_values)
-        success = (proc.returncode == 0)
+        success = proc.returncode == 0
 
         err_msg: str | None = None
         if not success:

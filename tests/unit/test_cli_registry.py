@@ -114,9 +114,7 @@ def test_cli_list_filter_type(sample_registry_dir: Path) -> None:
 
 def test_cli_search(sample_registry_dir: Path) -> None:
     """Test `aiaddons search` command."""
-    result = runner.invoke(
-        app, ["search", "github", "--registry-dir", str(sample_registry_dir)]
-    )
+    result = runner.invoke(app, ["search", "github", "--registry-dir", str(sample_registry_dir)])
     assert result.exit_code == 0
     assert "github-mcp" in result.stdout
     assert "refactoring-skill" not in result.stdout
@@ -135,9 +133,7 @@ def test_cli_search_json(sample_registry_dir: Path) -> None:
 
 def test_cli_info(sample_registry_dir: Path) -> None:
     """Test `aiaddons info <addon-id>` command."""
-    result = runner.invoke(
-        app, ["info", "github-mcp", "--registry-dir", str(sample_registry_dir)]
-    )
+    result = runner.invoke(app, ["info", "github-mcp", "--registry-dir", str(sample_registry_dir)])
     assert result.exit_code == 0
     assert "GitHub MCP Server" in result.stdout
     assert "1.2.0" in result.stdout

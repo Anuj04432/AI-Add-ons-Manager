@@ -216,9 +216,7 @@ def test_execution_failure_triggers_automatic_rollback(
     assert not (tmp_path / "skills/rollback_dir").exists()
 
 
-def test_mcp_operation_execution_in_phase_5b2(
-    tmp_path: Path, sample_source: SourceSpec
-) -> None:
+def test_mcp_operation_execution_in_phase_5b2(tmp_path: Path, sample_source: SourceSpec) -> None:
     """Verify that AddMcpServerOperation executes successfully under Phase 5B.2."""
     target_root = str(tmp_path)
     add_mcp = AddMcpServerOperation(

@@ -302,9 +302,7 @@ def test_registry_index_operations(tmp_path: Path) -> None:
         ),
         trust=TrustMetadata(publisher=PublisherClaimSpec(name="Community")),
         tags=["clean-code"],
-        handler_spec=HandlerSpecContainer(
-            skill=SkillHandlerSpec(skill_file="SKILL.md")
-        ),
+        handler_spec=HandlerSpecContainer(skill=SkillHandlerSpec(skill_file="SKILL.md")),
     )
 
     registry = Registry(manifests=[m1, m2])

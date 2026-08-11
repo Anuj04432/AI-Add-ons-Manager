@@ -7,6 +7,7 @@ from typing import Any
 from aiaddons.core.exceptions import InstallationError, SecurityValidationError
 from aiaddons.core.execution.external.models import ExternalExecutionRequest, ExternalRuntime
 from aiaddons.core.execution.external.runner import ExternalRunner
+from aiaddons.core.execution.external.security import mask_secrets_in_text
 from aiaddons.core.execution.models import (
     ExecutionResult,
     ExecutionStatus,
@@ -114,9 +115,11 @@ class ExecutionEngine:
         plan: InstallationPlan,
         transaction: InstallationTransaction | None = None,
         dry_run: bool = False,
+        secret_values: dict[str, str] | None = None,
     ) -> ExecutionResult:
         """Execute operations in an installation plan with safety validation and rollback."""
         plan.validate_safety()
+        secrets_list = list(secret_values.values()) if secret_values else []
 
         unsupported_ops = [
             op for op in plan.planned_operations if op.op_type not in self.SUPPORTED_OPERATIONS
@@ -126,7 +129,7 @@ class ExecutionEngine:
             err_msg = f"Unsupported operations detected ({unsupported_names})."
             if transaction:
                 transaction.phase = TransactionPhase.FAILED
-                transaction.error_message = err_msg
+                transaction.error_message = mask_secrets_in_text(err_msg, secrets_list)
                 if self.wal_manager:
                     self.wal_manager.write_transaction(transaction)
 
@@ -135,7 +138,7 @@ class ExecutionEngine:
                 target_agent=plan.target_agent,
                 scope=plan.target_scope,
                 status=ExecutionStatus.UNSUPPORTED,
-                error_message=err_msg,
+                error_message=mask_secrets_in_text(err_msg, secrets_list),
             )
 
         if transaction:
@@ -149,7 +152,9 @@ class ExecutionEngine:
 
         for op in plan.planned_operations:
             try:
-                rollback_action = self._dispatch_operation(op, dry_run=dry_run)
+                rollback_action = self._dispatch_operation(
+                    op, dry_run=dry_run, secret_values=secret_values
+                )
                 rollback_stack.append(rollback_action)
                 executed_results.append(
                     OperationExecutionResult(
@@ -161,7 +166,9 @@ class ExecutionEngine:
                     )
                 )
             except Exception as err:
-                err_msg = f"Failed executing '{op.description}': {err}"
+                err_msg = mask_secrets_in_text(
+                    f"Failed executing '{op.description}': {err}", secrets_list
+                )
                 executed_results.append(
                     OperationExecutionResult(
                         op_type=op.op_type.value,
@@ -169,7 +176,7 @@ class ExecutionEngine:
                         status=ExecutionStatus.FAILED,
                         target_root=op.target_root,
                         target_path=op.target_path or "",
-                        error_message=str(err),
+                        error_message=err_msg,
                     )
                 )
 
@@ -293,9 +300,11 @@ class ExecutionEngine:
             executed_operations=executed_results,
         )
 
-
     def _dispatch_operation(
-        self, op: BaseOperation, dry_run: bool = False
+        self,
+        op: BaseOperation,
+        dry_run: bool = False,
+        secret_values: dict[str, str] | None = None,
     ) -> RollbackAction:
         """Dispatch a single operation to its execution primitive."""
         if dry_run:
@@ -382,7 +391,7 @@ class ExecutionEngine:
             backup = dest.read_text(encoding="utf-8") if (existed and dest.is_file()) else None
 
             json_key = f"mcpServers.{op.server_name}"
-            is_npx = (op.runtime == MCPRuntime.NPX)
+            is_npx = op.runtime == MCPRuntime.NPX
             args_list = ["-y", op.package_name] if is_npx else [op.package_name]
             mcp_val: dict[str, Any] = {
                 "command": op.runtime.value,
@@ -419,9 +428,16 @@ class ExecutionEngine:
                     MCPRuntime.PYTHON: ExternalRuntime.PYTHON,
                 }
                 ext_runtime = runtime_map.get(op.runtime, ExternalRuntime.NPX)
+                op_env: dict[str, str] = {}
+                if secret_values:
+                    for env_name in op.env_var_names:
+                        if env_name in secret_values:
+                            op_env[env_name] = secret_values[env_name]
+
                 req = ExternalExecutionRequest(
                     runtime=ext_runtime,
                     package_name=op.package_name,
+                    env_vars=op_env,
                 )
                 res = self.external_runner.execute(req, dry_run=dry_run)
                 if not res.success:
@@ -539,7 +555,6 @@ class ExecutionEngine:
                     msg = f"Null byte detected in supporting file '{supp}'."
                     raise SecurityValidationError(msg)
 
-
                 atomic_write_file_primitive(
                     target_root=op.target_root,
                     file_path=supp_dest_path,
@@ -553,7 +568,6 @@ class ExecutionEngine:
                 target_path=skill_dest_dir,
                 existed_before=existed,
             )
-
 
         elif isinstance(op, AddPluginReferenceOperation):
             _, dest = verify_safe_target_path(op.target_root, op.config_path)

@@ -94,7 +94,11 @@ class GitRuntimeAdapter:
         target_dir = request.args[1].strip()
 
         # Validate URL and path
-        if not (repo_url.startswith("https://") or repo_url.startswith("git://") or repo_url.startswith("http://")):
+        if not (
+            repo_url.startswith("https://")
+            or repo_url.startswith("git://")
+            or repo_url.startswith("http://")
+        ):
             msg = f"Invalid git repository URL '{repo_url}'."
             raise SecurityValidationError(msg)
 

@@ -82,9 +82,7 @@ class InstallationEngine:
         """Evaluate compatibility and generate a dry-run plan without mutating host state."""
         # 1. Agent presence check
         if not agent.installed:
-            raise IncompatibleAgentError(
-                f"Agent '{agent.name}' is not installed on this system."
-            )
+            raise IncompatibleAgentError(f"Agent '{agent.name}' is not installed on this system.")
 
         # 2. Scope compatibility check
         if scope not in manifest.supported_scopes:
@@ -200,4 +198,3 @@ class InstallationEngine:
         if self._wal_manager:
             self._wal_manager.write_transaction(tx)
         return tx
-

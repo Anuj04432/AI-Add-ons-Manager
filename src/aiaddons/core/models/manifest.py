@@ -53,6 +53,9 @@ DANGEROUS_ENV_VARS: set[str] = {
     "PERLLIB",
     "JAVA_TOOL_OPTIONS",
     "_JAVA_OPTIONS",
+    "HOME",
+    "USERPROFILE",
+    "SUDO_USER",
 }
 
 ENV_VAR_REGEX = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -385,9 +388,7 @@ class IntegrationManifest(BaseModel):
     category: str
     integration_type: IntegrationType
     target_agents: list[str] = Field(default_factory=lambda: ["*"])
-    supported_scopes: list[Scope] = Field(
-        default_factory=lambda: [Scope.GLOBAL, Scope.WORKSPACE]
-    )
+    supported_scopes: list[Scope] = Field(default_factory=lambda: [Scope.GLOBAL, Scope.WORKSPACE])
     source: SourceSpec
     dependencies: list[DependencySpec] = Field(default_factory=list)
     trust: TrustMetadata
@@ -402,9 +403,7 @@ class IntegrationManifest(BaseModel):
         if not clean_id:
             raise ValueError("Add-on ID cannot be empty.")
         if not re.match(r"^[a-z0-9-_]+$", clean_id):
-            raise ValueError(
-                f"Invalid add-on ID '{v}'. Must be lowercase alphanumeric or dashes."
-            )
+            raise ValueError(f"Invalid add-on ID '{v}'. Must be lowercase alphanumeric or dashes.")
         return clean_id
 
     @field_validator("handler_spec")

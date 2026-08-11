@@ -27,9 +27,7 @@ class CLIToolInstaller(BaseIntegrationInstaller):
     ) -> list[str]:
         errors: list[str] = []
         if manifest.integration_type != IntegrationType.CLI_TOOL:
-            errors.append(
-                f"Invalid type '{manifest.integration_type.value}' for CLIToolInstaller."
-            )
+            errors.append(f"Invalid type '{manifest.integration_type.value}' for CLIToolInstaller.")
 
         if not manifest.handler_spec.cli_tool:
             errors.append("Missing required 'cli_tool' handler_spec in manifest.")
@@ -49,18 +47,12 @@ class CLIToolInstaller(BaseIntegrationInstaller):
 
         target_root = "~" if scope == Scope.GLOBAL else "."
 
-        config_dir = (
-            "~/.aiaddons/cli_tools"
-            if scope == Scope.GLOBAL
-            else ".agents/cli_tools"
-        )
+        config_dir = "~/.aiaddons/cli_tools" if scope == Scope.GLOBAL else ".agents/cli_tools"
         file_path = f"{config_dir}/{spec.binary_name}.json"
 
         bin_name = spec.binary_name
         ver_constraint = spec.version_constraint
-        summary_text = (
-            f"{{binary_name: '{bin_name}', version_constraint: '{ver_constraint}'}}"
-        )
+        summary_text = f"{{binary_name: '{bin_name}', version_constraint: '{ver_constraint}'}}"
         desc_text = f"Record verified link for binary '{bin_name}' ({agent.name})"
         record_op = WriteFileOperation(
             description=desc_text,

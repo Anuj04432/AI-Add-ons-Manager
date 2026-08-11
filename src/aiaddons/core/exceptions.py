@@ -32,6 +32,10 @@ class InstallationError(AIAddonsError):
     """Base exception for installation failures."""
 
 
+class SecretResolutionError(InstallationError):
+    """Error raised when resolving or validating required secrets fails."""
+
+
 class UnsupportedScopeError(InstallationError):
     """Error raised when a requested configuration scope is not supported."""
 

@@ -35,9 +35,7 @@ def test_claude_detected_with_binary_and_version(
     assert adapter.supports_capability(AgentCapability.MCP) is True
 
 
-def test_claude_detected_via_config_only(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_claude_detected_via_config_only(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Test Claude Code detection when binary is absent but config file exists."""
     config_file = tmp_path / ".claude.json"
     config_file.touch()
@@ -67,9 +65,7 @@ def test_claude_not_detected(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) ->
     assert result.executable_path is None
 
 
-def test_claude_malformed_version_output(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_claude_malformed_version_output(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Test Claude Code detection when binary returns malformed version output."""
     fake_binary = tmp_path / "bin" / "claude"
     fake_binary.parent.mkdir(parents=True, exist_ok=True)
@@ -110,9 +106,7 @@ def test_codex_detected_with_binary_and_version(
     assert adapter.supports_capability(AgentCapability.SKILL) is True
 
 
-def test_codex_detected_via_config_only(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_codex_detected_via_config_only(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Test OpenAI Codex detection when config directory exists."""
     config_dir = tmp_path / ".codex"
     config_dir.mkdir(parents=True, exist_ok=True)
@@ -139,9 +133,7 @@ def test_codex_not_detected(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> 
     assert result.version is None
 
 
-def test_detection_manager_all_installed(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_detection_manager_all_installed(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Test AgentDetectionManager when all agents are detected."""
     monkeypatch.setattr("shutil.which", lambda cmd: f"/usr/bin/{cmd}")
     monkeypatch.setattr("aiaddons.agents.claude_code.run_version_command", lambda cmd: "0.2.1")
@@ -175,7 +167,6 @@ def test_detection_manager_handles_exception_in_adapter() -> None:
 
         def get_skill_directory(self, scope: Scope, project_path: Path | None = None) -> Path:
             return Path("/tmp/faulty/skills")
-
 
     manager = AgentDetectionManager(adapters=[FaultyAdapter()])
     results = manager.detect_agents()
@@ -219,4 +210,3 @@ def test_agent_detection_result_scope_paths() -> None:
     assert res.get_config_path_for_scope("project") == "/project/.test.json"
     assert Scope.GLOBAL in res.supported_scopes
     assert Scope.WORKSPACE in res.supported_scopes
-

@@ -175,10 +175,7 @@ def test_atomic_state_store_and_lockfile_updates(tmp_path: Path) -> None:
     assert entries[0].addon_id == "github-mcp"
 
 
-
-def test_dry_run_zero_side_effects(
-    tmp_path: Path, sample_manifest: IntegrationManifest
-) -> None:
+def test_dry_run_zero_side_effects(tmp_path: Path, sample_manifest: IntegrationManifest) -> None:
     """Verify dry run mode makes zero changes to filesystem, state store, or lockfile."""
     wal_dir = tmp_path / "wal"
     wal_manager = TransactionWALManager(transactions_dir=wal_dir)

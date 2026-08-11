@@ -58,10 +58,13 @@ def test_cli_install_real_execution(tmp_path: Path) -> None:
         workspace_config_path=str(tmp_path / ".claude.json"),
     )
 
-    with patch(
-        "aiaddons.cli.commands.install.AgentDetectionManager.detect_agents",
-        return_value={"claude-code": mock_detected_agent},
-    ), patch("aiaddons.core.execution.external.runner.ExternalRunner.execute") as mock_ext:
+    with (
+        patch(
+            "aiaddons.cli.commands.install.AgentDetectionManager.detect_agents",
+            return_value={"claude-code": mock_detected_agent},
+        ),
+        patch("aiaddons.core.execution.external.runner.ExternalRunner.execute") as mock_ext,
+    ):
         mock_ext.return_value = ExternalExecutionResult(
             success=True,
             runtime=ExternalRuntime.NPX,

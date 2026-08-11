@@ -42,9 +42,7 @@ def sample_mcp_manifest() -> IntegrationManifest:
                     "transport": "stdio",
                     "runtime": "npx",
                     "package_name": "@modelcontextprotocol/server-github",
-                    "env_vars": [
-                        {"name": "GITHUB_PAT", "required": True, "secret": True}
-                    ],
+                    "env_vars": [{"name": "GITHUB_PAT", "required": True, "secret": True}],
                 }
             },
         }

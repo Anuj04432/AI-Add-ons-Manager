@@ -14,11 +14,7 @@ console = Console()
 
 def _get_default_registry(custom_dir: Path | None = None) -> Registry:
     """Load registry from custom path or default local directory."""
-    target_dir = (
-        custom_dir
-        if custom_dir is not None
-        else Path.cwd() / "registry" / "addons"
-    )
+    target_dir = custom_dir if custom_dir is not None else Path.cwd() / "registry" / "addons"
     registry, _load_res = Registry.from_directory(target_dir)
     return registry
 
@@ -60,9 +56,7 @@ def list_command(
     manifests = registry.list()
 
     if integration_type:
-        manifests = [
-            m for m in manifests if m.integration_type.value == integration_type.lower()
-        ]
+        manifests = [m for m in manifests if m.integration_type.value == integration_type.lower()]
     if category:
         manifests = [m for m in manifests if m.category.lower() == category.lower()]
     if agent:
