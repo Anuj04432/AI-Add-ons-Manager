@@ -6,11 +6,10 @@ import typer
 from rich.console import Console
 
 from aiaddons.agents.manager import AgentDetectionManager
-from aiaddons.core.exceptions import (
-    IncompatibleAgentError,
-    InstallationError,
-)
+from aiaddons.core.execution.engine import ExecutionEngine
+from aiaddons.core.execution.models import ExecutionStatus
 from aiaddons.core.installer.engine import InstallationEngine
+from aiaddons.core.installer.models import TransactionPhase
 from aiaddons.core.models.agent import Scope
 from aiaddons.registry.registry import Registry
 
@@ -44,11 +43,6 @@ def install_command(
     ),
 ) -> None:
     """Install an add-on or output a dry-run installation plan."""
-    if not dry_run:
-        msg = "[bold yellow]Real installation is not implemented yet. Use --dry-run.[/bold yellow]"
-        console.print(msg)
-        raise typer.Exit(code=0)
-
     # 1. Locate registry directory
     target_registry_dir = registry_path
     if target_registry_dir is None:
@@ -90,29 +84,39 @@ def install_command(
                 f"[bold red]Error:[/bold red] Specified agent '{agent_id}' is not registered."
             )
             raise typer.Exit(code=1)
-        agents_to_plan = [detected_agents[target_aid]]
+        agents_to_process = [detected_agents[target_aid]]
     else:
-        # Default to installed agents that match target_agents
         targets = [t.lower() for t in manifest.target_agents]
-        agents_to_plan = [
+        agents_to_process = [
             agent
             for agent in detected_agents.values()
             if agent.installed and ("*" in targets or agent.agent_id.lower() in targets)
         ]
-        if not agents_to_plan:
-            # Fall back to all installed agents or all detected agents
+        if not agents_to_process:
             installed = [a for a in detected_agents.values() if a.installed]
-            agents_to_plan = installed or list(detected_agents.values())
+            agents_to_process = installed or list(detected_agents.values())
 
-    engine = InstallationEngine()
-    plans_generated = 0
+    engine = InstallationEngine(registry=registry)
+    execution_engine = ExecutionEngine()
+    actions_completed = 0
 
-    for agent in agents_to_plan:
-        try:
-            plan = engine.generate_plan(manifest, agent, parsed_scope)
-            plans_generated += 1
+    for agent in agents_to_process:
+        tx = engine.create_transaction(manifest, agent, parsed_scope, registry=registry)
+        if tx.phase == TransactionPhase.FAILED or tx.plan is None:
+            if agent_id:
+                err_text = (
+                    f"[bold red]Cannot install '{manifest.id}' for {agent.name}:[/bold red] "
+                    f"{tx.error_message}"
+                )
+                console.print(err_text)
+                raise typer.Exit(code=1)
+            continue
 
-            # Format and display plan in Rich UI
+        actions_completed += 1
+        plan = tx.plan
+
+        if dry_run:
+            tx.is_dry_run = True
             console.print()
             console.print(f"[bold cyan]{manifest.name}[/bold cyan]")
             console.print("─" * max(len(manifest.name) + 2, 20))
@@ -130,15 +134,41 @@ def install_command(
             console.print()
             console.print("[dim]No changes were made.[/dim]")
             console.print()
+        else:
+            tx.is_dry_run = False
+            tx.phase = TransactionPhase.REVIEWED
+            console.print()
+            header_text = (
+                f"[bold cyan]Installing {manifest.name} ({manifest.id}) for "
+                f"{agent.name} ({parsed_scope.value})...[/bold cyan]"
+            )
+            console.print(header_text)
+            result = execution_engine.execute_plan(plan, transaction=tx, dry_run=False)
 
-        except (IncompatibleAgentError, InstallationError) as exc:
-            if agent_id:
-                console.print(f"[bold red]Cannot generate plan for {agent.name}:[/bold red] {exc}")
-                raise typer.Exit(code=1) from exc
+            if result.status == ExecutionStatus.SUCCESS:
+                success_text = (
+                    f"[bold green]✓ Successfully installed {manifest.name} for "
+                    f"{agent.name}[/bold green]"
+                )
+                console.print(success_text)
+                for op_res in result.executed_operations:
+                    console.print(f"  [green]✓[/green] {op_res.description}")
+                console.print()
+            else:
+                fail_text = (
+                    f"[bold red]✗ Installation failed for {agent.name}:[/bold red] "
+                    f"{result.error_message}"
+                )
+                console.print(fail_text)
+                if result.rolled_back_operations:
+                    console.print("[bold yellow]Rolled back changes:[/bold yellow]")
+                    for rb_res in result.rolled_back_operations:
+                        console.print(f"  [yellow]↩[/yellow] {rb_res.description}")
+                raise typer.Exit(code=1)
 
-    if plans_generated == 0 and not agent_id:
+    if actions_completed == 0 and not agent_id:
         msg = (
-            f"[bold yellow]No compatible installed agent found to generate plan for "
+            f"[bold yellow]No compatible installed agent found to install "
             f"'{addon_id}'.[/bold yellow]"
         )
         console.print(msg)

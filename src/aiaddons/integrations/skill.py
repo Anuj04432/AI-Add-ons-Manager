@@ -20,10 +20,10 @@ def get_skill_target_directory(agent_id: str, scope: Scope) -> str:
     aid = agent_id.lower()
     if scope == Scope.GLOBAL:
         if aid in ("claude-code", "claude"):
-            return "~/.claude/skills"
+            return ".claude/skills"
         if aid == "codex":
-            return "~/.codex/skills"
-        return f"~/.aiaddons/skills/{aid}"
+            return ".codex/skills"
+        return f".aiaddons/skills/{aid}"
     else:
         if aid in ("claude-code", "claude"):
             return ".claude/skills"

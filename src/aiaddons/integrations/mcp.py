@@ -1,5 +1,7 @@
 """MCP (Model Context Protocol) Integration Installer."""
 
+from pathlib import Path
+
 from aiaddons.core.compatibility.models import CompatibilityResult
 from aiaddons.core.installer.models import (
     AddMcpServerOperation,
@@ -12,6 +14,38 @@ from aiaddons.core.installer.models import (
 from aiaddons.core.models.agent import AgentDetectionResult, Scope
 from aiaddons.core.models.manifest import IntegrationManifest, IntegrationType
 from aiaddons.integrations.base import BaseIntegrationInstaller
+
+
+def make_relative_config_path(raw_path: str, scope: Scope) -> str:
+    """Safely derive a relative configuration path from raw agent config location."""
+    path_obj = Path(raw_path)
+    if not path_obj.is_absolute():
+        res = raw_path
+    else:
+        root_dir = Path.home() if scope == Scope.GLOBAL else Path.cwd()
+        try:
+            res = str(path_obj.relative_to(root_dir))
+        except ValueError:
+            parts = path_obj.parts
+            found_idx = None
+            for idx, part in enumerate(parts):
+                if part.startswith(".") or part.endswith(".json"):
+                    found_idx = idx
+                    break
+            if found_idx is not None:
+                res = "/".join(parts[found_idx:])
+            else:
+                res = path_obj.name
+
+    res = res.replace("\\", "/")
+    if res.startswith("~/"):
+        res = res[2:]
+    elif res.startswith("./"):
+        res = res[2:]
+
+    if not res.endswith(".json"):
+        res = f"{res}/config.json"
+    return res
 
 
 class MCPInstaller(BaseIntegrationInstaller):
@@ -50,14 +84,15 @@ class MCPInstaller(BaseIntegrationInstaller):
 
         target_root = "~" if scope == Scope.GLOBAL else "."
 
-        config_path = agent.get_config_path_for_scope(scope)
-        if not config_path:
-            config_path = (
-                f"~/.{agent.agent_id}.json"
+        raw_config_path = agent.get_config_path_for_scope(scope)
+        if not raw_config_path:
+            raw_config_path = (
+                f".{agent.agent_id}.json"
                 if scope == Scope.GLOBAL
                 else f".{agent.agent_id}.json"
             )
 
+        config_path = make_relative_config_path(raw_config_path, scope)
         env_names = [e.name for e in spec.env_vars]
 
         mcp_desc = (

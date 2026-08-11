@@ -1,6 +1,9 @@
 """Transactional Installation Engine for planning and validating add-on installations."""
 
+from __future__ import annotations
+
 import uuid
+from typing import TYPE_CHECKING
 
 from aiaddons.core.compatibility.engine import CompatibilityEngine
 from aiaddons.core.compatibility.models import CompatibilityResult
@@ -23,6 +26,9 @@ from aiaddons.integrations.mcp import MCPInstaller
 from aiaddons.integrations.plugin import PluginInstaller
 from aiaddons.integrations.skill import SkillInstaller
 
+if TYPE_CHECKING:
+    from aiaddons.registry.registry import Registry
+
 
 class InstallationEngine:
     """Core installation engine managing dry-run planning and safety verification."""
@@ -31,15 +37,17 @@ class InstallationEngine:
         self,
         installers: list[BaseIntegrationInstaller] | None = None,
         compatibility_engine: CompatibilityEngine | None = None,
+        registry: Registry | None = None,
     ) -> None:
         self._compatibility_engine = compatibility_engine or CompatibilityEngine()
+        self._registry = registry
         self._installers: dict[IntegrationType, BaseIntegrationInstaller] = {}
 
         if installers is None:
             default_installers: list[BaseIntegrationInstaller] = [
                 MCPInstaller(),
                 SkillInstaller(),
-                PluginInstaller(),
+                PluginInstaller(registry=registry),
                 CLIToolInstaller(),
             ]
             for inst in default_installers:
@@ -66,6 +74,7 @@ class InstallationEngine:
         manifest: IntegrationManifest,
         agent: AgentDetectionResult,
         scope: Scope = Scope.WORKSPACE,
+        registry: Registry | None = None,
     ) -> InstallationPlan:
         """Evaluate compatibility and generate a dry-run plan without mutating host state."""
         # 1. Agent presence check
@@ -108,12 +117,23 @@ class InstallationEngine:
             raise InstallationPlanningError(error_msg)
 
         # 6. Generate plan
-        plan = installer.generate_plan(
-            manifest=manifest,
-            agent=agent,
-            scope=scope,
-            compatibility=compat,
-        )
+        active_reg = registry or self._registry
+        if isinstance(installer, PluginInstaller):
+            plan = installer.generate_plan(
+                manifest=manifest,
+                agent=agent,
+                scope=scope,
+                compatibility=compat,
+                registry=active_reg,
+                compatibility_engine=self._compatibility_engine,
+            )
+        else:
+            plan = installer.generate_plan(
+                manifest=manifest,
+                agent=agent,
+                scope=scope,
+                compatibility=compat,
+            )
 
         # 7. Validate plan security & path traversal safety
         plan.validate_safety()
@@ -125,12 +145,13 @@ class InstallationEngine:
         manifest: IntegrationManifest,
         agents: list[AgentDetectionResult],
         scope: Scope = Scope.WORKSPACE,
+        registry: Registry | None = None,
     ) -> dict[str, InstallationPlan]:
         """Generate installation plans for multiple detected agents, skipping incompatible ones."""
         plans: dict[str, InstallationPlan] = {}
         for agent in agents:
             try:
-                plan = self.generate_plan(manifest, agent, scope)
+                plan = self.generate_plan(manifest, agent, scope, registry=registry)
                 plans[agent.agent_id] = plan
             except (IncompatibleAgentError, UnsupportedScopeError, UnsupportedIntegrationTypeError):
                 continue
@@ -141,13 +162,14 @@ class InstallationEngine:
         manifest: IntegrationManifest,
         agent: AgentDetectionResult,
         scope: Scope = Scope.WORKSPACE,
+        registry: Registry | None = None,
     ) -> InstallationTransaction:
         """Create and initialize a dry-run installation transaction."""
         tx_id = f"tx_{uuid.uuid4().hex[:12]}"
         compat = self._compatibility_engine.evaluate(manifest, agent, scope)
 
         try:
-            plan = self.generate_plan(manifest, agent, scope)
+            plan = self.generate_plan(manifest, agent, scope, registry=registry)
             return InstallationTransaction(
                 transaction_id=tx_id,
                 phase=TransactionPhase.PLANNED,

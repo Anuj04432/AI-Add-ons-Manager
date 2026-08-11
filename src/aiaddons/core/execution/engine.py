@@ -289,6 +289,10 @@ class ExecutionEngine:
             )
 
         elif isinstance(op, AddMcpServerOperation):
+            _, dest = verify_safe_target_path(op.target_root, op.config_path)
+            existed = dest.exists()
+            backup = dest.read_text(encoding="utf-8") if (existed and dest.is_file()) else None
+
             json_key = f"mcpServers.{op.server_name}"
             is_npx = (op.runtime == MCPRuntime.NPX)
             args_list = ["-y", op.package_name] if is_npx else [op.package_name]
@@ -299,6 +303,15 @@ class ExecutionEngine:
             if op.env_var_names:
                 mcp_val["env"] = {env_name: f"${{{env_name}}}" for env_name in op.env_var_names}
 
+            rollback_action = RollbackAction(
+                op_type="json",
+                target_root=op.target_root,
+                target_path=op.config_path,
+                json_path=json_key,
+                backup_content=backup,
+                existed_before=existed,
+            )
+
             modify_op = ModifyJsonOperation(
                 description=f"Inject MCP server '{op.server_name}' configuration",
                 target_root=op.target_root,
@@ -307,46 +320,94 @@ class ExecutionEngine:
                 value=mcp_val,
                 value_summary=f"mcpServers.{op.server_name}",
             )
-            modify_json_primitive(modify_op)
 
-            runtime_map = {
-                MCPRuntime.NPX: ExternalRuntime.NPX,
-                MCPRuntime.UVX: ExternalRuntime.UVX,
-                MCPRuntime.NODE: ExternalRuntime.NODE,
-                MCPRuntime.PYTHON: ExternalRuntime.PYTHON,
-            }
-            ext_runtime = runtime_map.get(op.runtime, ExternalRuntime.NPX)
-            req = ExternalExecutionRequest(
-                runtime=ext_runtime,
-                package_name=op.package_name,
+            try:
+                modify_json_primitive(modify_op)
+
+                runtime_map = {
+                    MCPRuntime.NPX: ExternalRuntime.NPX,
+                    MCPRuntime.UVX: ExternalRuntime.UVX,
+                    MCPRuntime.NODE: ExternalRuntime.NODE,
+                    MCPRuntime.PYTHON: ExternalRuntime.PYTHON,
+                }
+                ext_runtime = runtime_map.get(op.runtime, ExternalRuntime.NPX)
+                req = ExternalExecutionRequest(
+                    runtime=ext_runtime,
+                    package_name=op.package_name,
+                )
+                res = self.external_runner.execute(req, dry_run=dry_run)
+                if not res.success:
+                    msg = f"External package operation failed: {res.error_message}"
+                    raise InstallationError(msg)
+            except Exception:
+                rollback_action.rollback()
+                raise
+
+            return rollback_action
+
+        elif isinstance(op, AddSkillOperation):
+            skill_dest_dir = op.destination_dir
+            skill_file_path = f"{op.destination_dir}/{op.skill_file}"
+            _, dest_dir_path = verify_safe_target_path(op.target_root, skill_dest_dir)
+            _, dest_file_path = verify_safe_target_path(op.target_root, skill_file_path)
+
+            existed = dest_dir_path.exists()
+
+            create_directory_primitive(
+                CreateDirectoryOperation(
+                    description=f"Create skill directory '{skill_dest_dir}'",
+                    target_root=op.target_root,
+                    directory_path=skill_dest_dir,
+                )
             )
-            res = self.external_runner.execute(req, dry_run=dry_run)
-            if not res.success:
-                msg = f"External package operation failed: {res.error_message}"
-                raise InstallationError(msg)
+
+            for supp in op.supporting_files:
+                supp_path = f"{op.destination_dir}/{supp}"
+                verify_safe_target_path(op.target_root, supp_path)
+
+            if not dest_file_path.exists():
+                skill_content = f"# Skill: {op.skill_name}\n\nInstructions for {op.skill_name}."
+                atomic_write_file_primitive(
+                    target_root=op.target_root,
+                    file_path=skill_file_path,
+                    content=skill_content,
+                    overwrite=True,
+                )
+
+            return RollbackAction(
+                op_type="directory",
+                target_root=op.target_root,
+                target_path=skill_dest_dir,
+                existed_before=existed,
+            )
+
+        elif isinstance(op, AddPluginReferenceOperation):
+            _, dest = verify_safe_target_path(op.target_root, op.config_path)
+            existed = dest.exists()
+            backup = dest.read_text(encoding="utf-8") if (existed and dest.is_file()) else None
+
+            json_key = f"plugins.{op.plugin_id}"
+            plugin_val = {
+                "id": op.plugin_id,
+                "components": op.component_ids,
+            }
+            modify_op = ModifyJsonOperation(
+                description=f"Register plugin reference '{op.plugin_id}'",
+                target_root=op.target_root,
+                file_path=op.config_path,
+                json_path=json_key,
+                value=plugin_val,
+                value_summary=f"plugins.{op.plugin_id}",
+            )
+            modify_json_primitive(modify_op)
 
             return RollbackAction(
                 op_type="json",
                 target_root=op.target_root,
                 target_path=op.config_path,
                 json_path=json_key,
-                existed_before=True,
-            )
-
-        elif isinstance(op, AddSkillOperation):
-            skill_dest = f"{op.destination_dir}/{op.skill_name}/{op.skill_file}"
-            verify_safe_target_path(op.target_root, skill_dest)
-            return RollbackAction(
-                op_type="directory",
-                target_root=op.target_root,
-                target_path=f"{op.destination_dir}/{op.skill_name}",
-            )
-
-        elif isinstance(op, AddPluginReferenceOperation):
-            return RollbackAction(
-                op_type="json",
-                target_root=op.target_root,
-                target_path=op.plugin_id,
+                backup_content=backup,
+                existed_before=existed,
             )
 
         else:
