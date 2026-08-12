@@ -76,7 +76,7 @@ def test_cli_install_real_execution(tmp_path: Path) -> None:
             duration=0.1,
         )
 
-        cmd_args = ["install", "github-mcp", "--registry", str(reg_dir)]
+        cmd_args = ["install", "github-mcp", "--yes", "--registry", str(reg_dir)]
         result = runner.invoke(app, cmd_args)
         assert result.exit_code == 0
         assert "Successfully installed GitHub MCP Server" in result.stdout

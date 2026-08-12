@@ -8,6 +8,7 @@ from aiaddons.cli.commands.agents import agents_command
 from aiaddons.cli.commands.compatibility import check_command
 from aiaddons.cli.commands.install import install_command
 from aiaddons.cli.commands.registry import info_command, list_command, search_command
+from aiaddons.cli.commands.tui import tui_command
 
 app = typer.Typer(
     name="aiaddons",
@@ -23,6 +24,7 @@ app.command(name="search")(search_command)
 app.command(name="info")(info_command)
 app.command(name="check")(check_command)
 app.command(name="install")(install_command)
+app.command(name="tui")(tui_command)
 
 
 def version_callback(value: bool) -> None:

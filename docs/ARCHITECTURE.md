@@ -368,6 +368,48 @@ Phase 5B.9 introduces a dedicated post-installation verification subsystem (`src
 7. **Dry-Run Guarantees**:
    Under `dry_run=True`, `VerificationEngine` executes structural plan inspection (`PLAN ONLY`), returns `VerificationResult` with check status `SKIPPED`, and performs zero subprocess executions, zero network requests, zero file mutations, zero state/lockfile persistence, and zero WAL writes.
 
+### 10.10 CLI & TUI Installation Pipeline Integration — Phase 5B.10
+Phase 5B.10 completes the user-facing interface layer, wrapping the foundational core engines (`CompatibilityEngine`, `InstallationEngine`, `ExecutionEngine`, `VerificationEngine`, `SecretResolver`, `TransactionWALManager`, `InstalledStateStore`, and `LockfileManager`) into safe, deterministic CLI commands and an interactive Textual TUI.
+
+1. **User Interface Architecture**:
+   ```text
+   CLI / TUI Presentation Layer (Typer / Textual)
+             ↓
+   Application / Engine Layer
+             ↓
+   CompatibilityEngine → InstallationEngine → SecretResolver → ExecutionEngine → VerificationEngine
+             ↓
+   Transaction WAL + InstalledStateStore + LockfileManager
+   ```
+   The UI layer strictly delegates all business logic, path verification, subprocess executions, state mutations, and transaction updates to the core application engines. The UI layer does NOT modify files directly, execute shell binaries directly, or bypass security guarantees.
+
+2. **CLI Installation Flow (`aiaddons install <addon-id>`)**:
+   - **Manifest Resolution**: Queries the loaded `Registry` for `<addon-id>`. Returns exit code `1` (`ExitCode.INVALID_INPUT`) if not found.
+   - **Agent Detection**: Scans system via `AgentDetectionManager`. Filters target agents matching manifest target spec or explicitly requested `--agent`.
+   - **Compatibility Check**: Evaluates compatibility via `CompatibilityEngine`. Exits with exit code `3` (`ExitCode.COMPATIBILITY_FAILURE`) if incompatible.
+   - **Installation Plan**: Generates dry-run `InstallationPlan` via `InstallationEngine`. Validates operation safety and path containment.
+   - **Plan Preview & Confirmation**: Displays formatted operations plan. Prompts `Continue? [y/N]` (default `N`). Accepts non-interactive `--yes` / `-y` flag without bypassing compatibility or security checks.
+   - **Secret Resolution**: Uses `SecretResolver` to inspect declared environment variable requirements (`env_vars`). Prompts required missing secrets interactively using hidden TTY input (`getpass`). In non-interactive mode, exits with exit code `5` (`ExitCode.EXECUTION_FAILURE`) if a required secret is missing. Masks secret values across stdout, Rich output, error messages, and JSON objects.
+   - **Execution & Verification**: Executes plan via `ExecutionEngine`, which invokes `VerificationEngine.verify_plan()`. Displays checkmark results (`✓`). If verification fails, `ExecutionEngine` rolls back changes, displays rollback summary, and exits with exit code `6` (`ExitCode.VERIFICATION_FAILURE`).
+   - **Transaction State Transitions**: Transaction phase transitions through `REQUESTED` → `COMPATIBILITY_CHECKED` → `PLANNED` → `REVIEWED` → `EXECUTING` → `VERIFIED` → `COMMITTED` (or `FAILED` / `ROLLED_BACK` on error).
+
+3. **Side-Effect Free `--dry-run`**:
+   Invoking `aiaddons install <addon-id> --dry-run` produces an installation plan preview, avoids executing subprocesses/network calls/file modifications/WAL writes/lockfile mutations/secret prompts, and explicitly outputs `"No changes were made."`.
+
+4. **Structured JSON Output (`--json`)**:
+   Deterministic, machine-readable JSON representation suitable for scripting. Output is rendered directly without terminal soft-wrapping escape characters. Excludes raw secret values, environment dumps, internal tracebacks, or raw shell command lines.
+
+5. **Textual TUI Application (`aiaddons tui`)**:
+   Interactive Textual interface (`AIAddonsTUIApp`) featuring add-on list navigation, target agent/scope selection, live compatibility evaluation, dry-run plan preview, hidden password secret input fields, execution logging, and transaction status reporting. Calls core engine services directly without duplicating business logic.
+
+6. **Standardized Exit Codes (`ExitCode`)**:
+   - `0`: Success (`ExitCode.SUCCESS`)
+   - `1`: Invalid user/request input (`ExitCode.INVALID_INPUT`)
+   - `3`: Compatibility failure (`ExitCode.COMPATIBILITY_FAILURE`)
+   - `4`: Security validation failure (`ExitCode.SECURITY_FAILURE`)
+   - `5`: Installation or execution failure (`ExitCode.EXECUTION_FAILURE`)
+   - `6`: Verification or rollback failure (`ExitCode.VERIFICATION_FAILURE`)
+
 ---
 
 
