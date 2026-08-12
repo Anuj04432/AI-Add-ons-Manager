@@ -219,6 +219,12 @@ handler_spec:
   2. Executes child tasks within a single composite transaction.
   3. Ensures all sub-components are active or rolls back the entire installation if any component fails.
 
+### Distinction: Composite Plugin Abstraction vs Native Agent Capability
+- **`IntegrationType.PLUGIN`**: An `aiaddons` composite packaging abstraction combining multiple child integrations (MCP servers, agent skills, CLI dependencies).
+- **`AgentCapability.PLUGIN`**: A native agent capability indicator for agents that explicitly support direct native plugin systems.
+
+The `CompatibilityEngine` does NOT conflate these two concepts: `IntegrationType.PLUGIN` does not require `AgentCapability.PLUGIN` from target agents (such as Claude Code or Codex). Instead, composite plugin compatibility is evaluated through the compatibility of its underlying child components.
+
 ---
 
 ## 10. Installation Engine Architecture (Phase 5A)

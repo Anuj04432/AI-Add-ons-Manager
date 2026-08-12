@@ -63,8 +63,10 @@ def check_command(
     manager = AgentDetectionManager()
     detected_agents = list(manager.detect_agents().values())
 
-    engine = CompatibilityEngine()
-    results = engine.evaluate_all(manifest, detected_agents, requested_scope=req_scope)
+    engine = CompatibilityEngine(registry=registry)
+    results = engine.evaluate_all(
+        manifest, detected_agents, requested_scope=req_scope, registry=registry
+    )
 
     if json_output:
         serialized = [r.model_dump() for r in results]

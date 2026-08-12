@@ -255,11 +255,11 @@ def install_command(
 
     engine = InstallationEngine(registry=registry)
     execution_engine = ExecutionEngine()
-    compat_engine = CompatibilityEngine()
+    compat_engine = CompatibilityEngine(registry=registry)
 
     for agent in agents_to_process:
         # Check compatibility explicitly first
-        compat_result = compat_engine.evaluate(manifest, agent, parsed_scope)
+        compat_result = compat_engine.evaluate(manifest, agent, parsed_scope, registry=registry)
         if not compat_result.compatible:
             reasons_str = "; ".join(compat_result.reasons)
             incompat_msg = (
@@ -538,9 +538,7 @@ def install_command(
             tx.phase = TransactionPhase.COMMITTED
             # Run verification checks summary for output
             verification_engine = VerificationEngine()
-            ver_res = verification_engine.verify_plan(
-                plan, dry_run=False, secret_values=secret_map
-            )
+            ver_res = verification_engine.verify_plan(plan, dry_run=False, secret_values=secret_map)
 
             if json_output:
                 formatted = _format_json_response(

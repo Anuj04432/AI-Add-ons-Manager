@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from aiaddons.core.exceptions import (
+    IncompatibleAgentError,
     InstallationPlanningError,
 )
 from aiaddons.core.execution.engine import ExecutionEngine
@@ -311,7 +312,8 @@ def test_plugin_component_resolution_and_cycle_detection(
     reg = Registry([m1, m2])
     engine = InstallationEngine(registry=reg)
 
-    with pytest.raises(InstallationPlanningError, match="Dependency cycle detected"):
+    expected_exc = (IncompatibleAgentError, InstallationPlanningError)
+    with pytest.raises(expected_exc, match="Dependency cycle detected"):
         engine.generate_plan(m1, claude_agent, Scope.WORKSPACE)
 
 

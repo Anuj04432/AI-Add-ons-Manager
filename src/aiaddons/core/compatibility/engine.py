@@ -1,7 +1,10 @@
 """Pure decision engine for evaluating add-on compatibility with detected AI coding agents."""
 
+from __future__ import annotations
+
 import shutil
 import sys
+from typing import TYPE_CHECKING
 
 from aiaddons.core.compatibility.models import (
     CompatibilityResult,
@@ -14,6 +17,9 @@ from aiaddons.core.models.manifest import (
     IntegrationManifest,
     IntegrationType,
 )
+
+if TYPE_CHECKING:
+    from aiaddons.registry.registry import Registry
 
 
 def _normalize_platform(raw_platform: str | None = None) -> str:
@@ -31,8 +37,13 @@ def _normalize_platform(raw_platform: str | None = None) -> str:
 class CompatibilityEngine:
     """In-memory decision engine evaluating manifest compatibility against agents."""
 
-    def __init__(self, platform_override: str | None = None) -> None:
+    def __init__(
+        self,
+        platform_override: str | None = None,
+        registry: Registry | None = None,
+    ) -> None:
         self.platform = _normalize_platform(platform_override)
+        self.registry = registry
 
     def _evaluate_dependencies(
         self, manifest: IntegrationManifest, agent: AgentDetectionResult
@@ -111,13 +122,13 @@ class CompatibilityEngine:
 
         return results
 
-    def evaluate(
+    def evaluate_single(
         self,
         manifest: IntegrationManifest,
         agent: AgentDetectionResult,
         requested_scope: Scope = Scope.WORKSPACE,
     ) -> CompatibilityResult:
-        """Evaluate compatibility of an IntegrationManifest against an AgentDetectionResult."""
+        """Evaluate single-node compatibility without resolving composite plugin children."""
         reasons: list[str] = []
         warnings: list[str] = []
         missing_reqs: list[str] = []
@@ -149,13 +160,13 @@ class CompatibilityEngine:
             unsupported_reqs.append(f"Scope: {requested_scope.value}")
 
         # 3. Agent Capability Matching
+        # Note: IntegrationType.PLUGIN is an aiaddons composite abstraction,
+        # NOT a native capability required from agents such as Claude Code or Codex.
         required_capability: AgentCapability | None = None
         if manifest.integration_type == IntegrationType.MCP:
             required_capability = AgentCapability.MCP
         elif manifest.integration_type == IntegrationType.SKILL:
             required_capability = AgentCapability.SKILL
-        elif manifest.integration_type == IntegrationType.PLUGIN:
-            required_capability = AgentCapability.PLUGIN
 
         if required_capability and required_capability not in agent.capabilities:
             reasons.append(
@@ -175,7 +186,7 @@ class CompatibilityEngine:
         if not source_ok and source_warning:
             warnings.append(source_warning)
 
-        # 6. Final Decision
+        # 6. Final Decision for single node
         is_compatible = is_installed and len(reasons) == 0
 
         if is_compatible and not reasons:
@@ -198,11 +209,68 @@ class CompatibilityEngine:
             source_install_warning=source_warning,
         )
 
+    def evaluate(
+        self,
+        manifest: IntegrationManifest,
+        agent: AgentDetectionResult,
+        requested_scope: Scope = Scope.WORKSPACE,
+        registry: Registry | None = None,
+        visited: set[str] | None = None,
+        stack: list[str] | None = None,
+    ) -> CompatibilityResult:
+        """Evaluate compatibility of an IntegrationManifest against an AgentDetectionResult."""
+        result = self.evaluate_single(manifest, agent, requested_scope)
+        if not result.compatible:
+            return result
+
+        active_registry = registry or self.registry
+        if manifest.integration_type == IntegrationType.PLUGIN:
+            if active_registry:
+                from aiaddons.core.exceptions import (
+                    IncompatibleAgentError,
+                    InstallationPlanningError,
+                )
+                from aiaddons.integrations.plugin import resolve_plugin_components
+
+                try:
+                    resolve_plugin_components(
+                        manifest=manifest,
+                        registry=active_registry,
+                        agent=agent,
+                        scope=requested_scope,
+                        compatibility_engine=self,
+                        visited=visited,
+                        stack=stack,
+                    )
+                except (IncompatibleAgentError, InstallationPlanningError) as err:
+                    err_msg = str(err)
+                    result.compatible = False
+                    result.reasons = [err_msg]
+                    if isinstance(err, IncompatibleAgentError):
+                        result.unsupported_requirements.append(err_msg)
+                    else:
+                        result.missing_requirements.append(err_msg)
+            else:
+                spec = manifest.handler_spec.plugin
+                if spec and spec.components:
+                    err_msg = (
+                        "Registry reference is required to resolve child components "
+                        f"for plugin '{manifest.name}'."
+                    )
+                    result.compatible = False
+                    result.reasons = [err_msg]
+                    result.missing_requirements.append("Registry reference for plugin components")
+
+        return result
+
     def evaluate_all(
         self,
         manifest: IntegrationManifest,
         agents: list[AgentDetectionResult],
         requested_scope: Scope = Scope.WORKSPACE,
+        registry: Registry | None = None,
     ) -> list[CompatibilityResult]:
         """Evaluate an IntegrationManifest against multiple detected agents."""
-        return [self.evaluate(manifest, agent, requested_scope) for agent in agents]
+        return [
+            self.evaluate(manifest, agent, requested_scope, registry=registry) for agent in agents
+        ]

@@ -203,15 +203,16 @@ class AIAddonsTUIApp(App[None]):
         m = self.selected_manifest
         md_text = f"## {m.name} (`{m.id}`)\n\n"
         md_text += (
-            f"**Version:** {m.version} | **License:** {m.license} | "
-            f"**Category:** {m.category}\n\n"
+            f"**Version:** {m.version} | **License:** {m.license} | **Category:** {m.category}\n\n"
         )
         md_text += f"{m.description}\n\n"
         md_text += f"**Integration Type:** `{m.integration_type.value}`\n\n"
 
         if self.selected_agent:
-            compat_engine = CompatibilityEngine()
-            compat = compat_engine.evaluate(m, self.selected_agent, self.selected_scope)
+            compat_engine = CompatibilityEngine(registry=self.registry)
+            compat = compat_engine.evaluate(
+                m, self.selected_agent, self.selected_scope, registry=self.registry
+            )
             if compat.compatible:
                 md_text += f"### Compatibility: ✅ Compatible with {self.selected_agent.name}\n\n"
                 confirm_btn.disabled = False
@@ -263,9 +264,12 @@ class AIAddonsTUIApp(App[None]):
     def _run_compatibility_check(self) -> None:
         if not self.selected_manifest or not self.selected_agent:
             return
-        compat_engine = CompatibilityEngine()
+        compat_engine = CompatibilityEngine(registry=self.registry)
         compat = compat_engine.evaluate(
-            self.selected_manifest, self.selected_agent, self.selected_scope
+            self.selected_manifest,
+            self.selected_agent,
+            self.selected_scope,
+            registry=self.registry,
         )
         detail_view = self.query_one("#detail-view", Markdown)
 

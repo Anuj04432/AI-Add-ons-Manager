@@ -1,8 +1,10 @@
 """Execution engine for Phase 5B safe structural and external package execution operations."""
 
+from __future__ import annotations
+
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from aiaddons.core.exceptions import InstallationError, SecurityValidationError
 from aiaddons.core.execution.external.models import ExternalExecutionRequest, ExternalRuntime
@@ -45,7 +47,9 @@ from aiaddons.core.verification.engine import VerificationEngine
 from aiaddons.core.verification.models import VerificationStatus
 from aiaddons.state.lockfile import LockfileAddonEntry, LockfileManager
 from aiaddons.state.store import InstalledAddonRecord, InstalledStateStore
-from aiaddons.state.transaction import TransactionWALManager
+
+if TYPE_CHECKING:
+    from aiaddons.state.transaction import TransactionWALManager
 
 
 class RollbackAction:
@@ -113,7 +117,6 @@ class ExecutionEngine:
         self.state_store = state_store
         self.lockfile_manager = lockfile_manager
         self.verification_engine = verification_engine or VerificationEngine()
-
 
     def execute_plan(
         self,

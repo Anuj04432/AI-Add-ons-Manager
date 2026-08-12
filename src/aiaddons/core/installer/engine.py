@@ -20,14 +20,10 @@ from aiaddons.core.installer.models import (
 )
 from aiaddons.core.models.agent import AgentDetectionResult, Scope
 from aiaddons.core.models.manifest import IntegrationManifest, IntegrationType
-from aiaddons.integrations.base import BaseIntegrationInstaller
-from aiaddons.integrations.cli_tool import CLIToolInstaller
-from aiaddons.integrations.mcp import MCPInstaller
-from aiaddons.integrations.plugin import PluginInstaller
-from aiaddons.integrations.skill import SkillInstaller
 from aiaddons.state.transaction import TransactionWALManager
 
 if TYPE_CHECKING:
+    from aiaddons.integrations.base import BaseIntegrationInstaller
     from aiaddons.registry.registry import Registry
 
 
@@ -41,12 +37,19 @@ class InstallationEngine:
         registry: Registry | None = None,
         wal_manager: TransactionWALManager | None = None,
     ) -> None:
-        self._compatibility_engine = compatibility_engine or CompatibilityEngine()
+        self._compatibility_engine = compatibility_engine or CompatibilityEngine(registry=registry)
+        if registry and self._compatibility_engine.registry is None:
+            self._compatibility_engine.registry = registry
         self._registry = registry
         self._wal_manager = wal_manager
         self._installers: dict[IntegrationType, BaseIntegrationInstaller] = {}
 
         if installers is None:
+            from aiaddons.integrations.cli_tool import CLIToolInstaller
+            from aiaddons.integrations.mcp import MCPInstaller
+            from aiaddons.integrations.plugin import PluginInstaller
+            from aiaddons.integrations.skill import SkillInstaller
+
             default_installers: list[BaseIntegrationInstaller] = [
                 MCPInstaller(),
                 SkillInstaller(),
@@ -95,11 +98,14 @@ class InstallationEngine:
                 f"Agent '{agent.name}' does not support scope '{scope.value}'."
             )
 
+        active_reg = registry or self._registry
+
         # 3. Comprehensive compatibility check
         compat: CompatibilityResult = self._compatibility_engine.evaluate(
             manifest=manifest,
             agent=agent,
             requested_scope=scope,
+            registry=active_reg,
         )
 
         if not compat.compatible:
@@ -118,7 +124,8 @@ class InstallationEngine:
             raise InstallationPlanningError(error_msg)
 
         # 6. Generate plan
-        active_reg = registry or self._registry
+        from aiaddons.integrations.plugin import PluginInstaller
+
         if isinstance(installer, PluginInstaller):
             plan = installer.generate_plan(
                 manifest=manifest,
@@ -167,7 +174,8 @@ class InstallationEngine:
     ) -> InstallationTransaction:
         """Create and initialize a dry-run installation transaction."""
         tx_id = f"tx_{uuid.uuid4().hex[:12]}"
-        compat = self._compatibility_engine.evaluate(manifest, agent, scope)
+        active_reg = registry or self._registry
+        compat = self._compatibility_engine.evaluate(manifest, agent, scope, registry=active_reg)
 
         tx: InstallationTransaction
         try:

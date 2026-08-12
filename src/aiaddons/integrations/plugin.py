@@ -68,7 +68,10 @@ def resolve_plugin_components(
                 )
                 raise InstallationPlanningError(msg)
 
-            compat = compatibility_engine.evaluate(comp_manifest, agent, scope)
+            eval_func = getattr(
+                compatibility_engine, "evaluate_single", compatibility_engine.evaluate
+            )
+            compat = eval_func(comp_manifest, agent, scope)
             if not compat.compatible:
                 reasons = "; ".join(compat.reasons)
                 msg = (
