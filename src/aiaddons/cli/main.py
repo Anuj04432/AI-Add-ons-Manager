@@ -7,7 +7,13 @@ from aiaddons import __version__
 from aiaddons.cli.commands.agents import agents_command
 from aiaddons.cli.commands.compatibility import check_command
 from aiaddons.cli.commands.install import install_command
-from aiaddons.cli.commands.registry import info_command, list_command, search_command
+from aiaddons.cli.commands.registry import (
+    info_command,
+    list_command,
+    registry_status_command,
+    registry_update_command,
+    search_command,
+)
 from aiaddons.cli.commands.tui import tui_command
 
 app = typer.Typer(
@@ -18,6 +24,7 @@ app = typer.Typer(
 
 console = Console()
 
+# Top-level commands
 app.command(name="agents")(agents_command)
 app.command(name="list")(list_command)
 app.command(name="search")(search_command)
@@ -25,6 +32,20 @@ app.command(name="info")(info_command)
 app.command(name="check")(check_command)
 app.command(name="install")(install_command)
 app.command(name="tui")(tui_command)
+
+# Registry subcommand group
+registry_app = typer.Typer(
+    name="registry",
+    help="Manage, update, and inspect the add-on registry cache.",
+    add_completion=False,
+)
+registry_app.command(name="update")(registry_update_command)
+registry_app.command(name="status")(registry_status_command)
+registry_app.command(name="list")(list_command)
+registry_app.command(name="search")(search_command)
+registry_app.command(name="info")(info_command)
+
+app.add_typer(registry_app, name="registry")
 
 
 def version_callback(value: bool) -> None:

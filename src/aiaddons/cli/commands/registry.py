@@ -1,4 +1,4 @@
-"""CLI commands for listing, searching, and inspecting registry add-on metadata."""
+"""CLI commands for listing, searching, updating, and inspecting registry metadata."""
 
 import json
 from pathlib import Path
@@ -7,15 +7,18 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from aiaddons.core.exceptions import AIAddonsError
+from aiaddons.core.models.manifest import IntegrationType
+from aiaddons.registry.cache import RegistryCacheManager
+from aiaddons.registry.client import RegistryClient
 from aiaddons.registry.registry import Registry
 
 console = Console()
 
 
 def _get_default_registry(custom_dir: Path | None = None) -> Registry:
-    """Load registry from custom path or default local directory."""
-    target_dir = custom_dir if custom_dir is not None else Path.cwd() / "registry" / "addons"
-    registry, _load_res = Registry.from_directory(target_dir)
+    """Load registry from custom directory, local cache, or default codebase directory."""
+    registry, _source = Registry.load_auto(custom_dir=custom_dir)
     return registry
 
 
@@ -70,7 +73,7 @@ def list_command(
 
     if json_output:
         serialized = [m.model_dump() for m in manifests]
-        console.print(json.dumps(serialized, indent=2))
+        print(json.dumps(serialized, indent=2))
         return
 
     if not manifests:
@@ -121,13 +124,13 @@ def search_command(
         help="Path to custom registry directory.",
     ),
 ) -> None:
-    """Search for add-ons in the registry by keyword."""
+    """Search for add-ons in the local registry cache or directory by keyword."""
     registry = _get_default_registry(registry_dir)
     manifests = registry.search(query)
 
     if json_output:
         serialized = [m.model_dump() for m in manifests]
-        console.print(json.dumps(serialized, indent=2))
+        print(json.dumps(serialized, indent=2))
         return
 
     if not manifests:
@@ -179,7 +182,7 @@ def info_command(
         raise typer.Exit(code=1)
 
     if json_output:
-        console.print(json.dumps(manifest.model_dump(), indent=2))
+        print(json.dumps(manifest.model_dump(), indent=2))
         return
 
     console.print(f"\n[bold cyan]{manifest.name}[/bold cyan] [dim](v{manifest.version})[/dim]")
@@ -216,6 +219,21 @@ def info_command(
             console.print(f"[bold]Repository:[/bold] {manifest.source.repository}")
         if manifest.source.package_name:
             console.print(f"[bold]Package:[/bold] {manifest.source.package_name}")
+        if manifest.source.commit_sha:
+            console.print(f"[bold]Commit SHA:[/bold] {manifest.source.commit_sha}")
+        if manifest.source.checksum:
+            console.print(f"[bold]Checksum:[/bold] {manifest.source.checksum}")
+
+    if manifest.trust.allowed_executables:
+        console.print(
+            f"[bold]Allowed Executables:[/bold] {', '.join(manifest.trust.allowed_executables)}"
+        )
+
+    if manifest.integration_type == IntegrationType.PLUGIN and manifest.handler_spec.plugin:
+        components = manifest.handler_spec.plugin.components
+        console.print(f"\n[bold]Composite Plugin Components ({len(components)} items):[/bold]")
+        for comp_id in components:
+            console.print(f"  - {comp_id}")
 
     if manifest.dependencies:
         console.print("\n[bold]Dependencies:[/bold]")
@@ -224,3 +242,93 @@ def info_command(
             console.print(f"  - {dep.name} ({dep.type.value}, {req_str})")
 
     console.print()
+
+
+def registry_update_command(
+    registry_url: str | None = typer.Option(
+        None,
+        "--url",
+        "-u",
+        help="Custom registry URL to fetch metadata from.",
+    ),
+    cache_dir: Path | None = typer.Option(
+        None,
+        "--cache-dir",
+        help="Custom registry cache directory.",
+    ),
+) -> None:
+    """Synchronize add-on registry metadata from trusted remote endpoint."""
+    console.print("[bold cyan]Updating registry...[/bold cyan]")
+    try:
+        client = RegistryClient(registry_url=registry_url)
+        console.print(f"Connecting to [yellow]{client.registry_url}[/yellow]...")
+        index = client.fetch_registry()
+        console.print("  [green]✓[/green] Downloaded registry metadata")
+        console.print(f"  [green]✓[/green] Schema validated (v{index.schema_version})")
+        console.print(f"  [green]✓[/green] {len(index.manifests)} add-ons validated")
+
+        cache_mgr = RegistryCacheManager(cache_dir=cache_dir)
+        saved_path = cache_mgr.save_cache(index)
+        console.print(f"  [green]✓[/green] Registry cache updated at [dim]{saved_path}[/dim]")
+        console.print("[bold green]Registry update complete.[/bold green]")
+    except AIAddonsError as err:
+        console.print(f"[bold red]Registry update failed:[/bold red] {err}")
+        raise typer.Exit(code=1) from err
+    except Exception as err:
+        console.print(f"[bold red]Unexpected error during registry update:[/bold red] {err}")
+        raise typer.Exit(code=1) from err
+
+
+def registry_status_command(
+    registry_url: str | None = typer.Option(
+        None,
+        "--url",
+        "-u",
+        help="Custom registry URL to inspect status for.",
+    ),
+    cache_dir: Path | None = typer.Option(
+        None,
+        "--cache-dir",
+        help="Custom registry cache directory.",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        "-j",
+        help="Output status in JSON format.",
+    ),
+) -> None:
+    """Display status and statistics of the local registry cache."""
+    client = RegistryClient(registry_url=registry_url)
+    cache_mgr = RegistryCacheManager(cache_dir=cache_dir)
+    status = cache_mgr.get_status(client.registry_url)
+
+    if json_output:
+        print(json.dumps(status, indent=2))
+        return
+
+    console.print("\n[bold cyan]AI Add-ons Registry Status[/bold cyan]")
+    console.print(f"[bold]Configured URL:[/bold] {status['configured_url']}")
+    console.print(f"[bold]Cache Location:[/bold] {status['cache_file']}")
+
+    if status["cache_exists"] and status["is_valid"]:
+        console.print("[bold]Cache State:[/bold] [green]Valid[/green]")
+        console.print(f"[bold]Schema Version:[/bold] {status['cached_schema_version']}")
+        console.print(f"[bold]Last Synced:[/bold] {status['last_synced_at']}")
+        console.print(
+            f"[bold]Available Add-ons:[/bold] [bold green]{status['addon_count']}[/bold green]"
+        )
+        console.print("[bold]Sync Status:[/bold] [green]Up to date[/green]\n")
+    elif status["cache_exists"] and not status["is_valid"]:
+        console.print("[bold]Cache State:[/bold] [bold red]Corrupted / Invalid[/bold red]")
+        console.print(f"[bold]Error:[/bold] {status['error']}")
+        console.print(
+            "[bold]Sync Status:[/bold] [bold yellow]"
+            "Synchronization required (run 'aiaddons registry update')[/bold yellow]\n"
+        )
+    else:
+        console.print("[bold]Cache State:[/bold] [yellow]Not Cached[/yellow]")
+        console.print(
+            "[bold]Sync Status:[/bold] [bold yellow]"
+            "Synchronization required (run 'aiaddons registry update')[/bold yellow]\n"
+        )

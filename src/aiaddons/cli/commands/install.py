@@ -160,28 +160,8 @@ def install_command(
     """Install an add-on or output a dry-run installation plan with safety verification."""
     sym_ok, sym_fail = _get_symbols()
 
-    # 1. Locate registry directory
-    target_registry_dir = registry_path
-    if target_registry_dir is None:
-        default_dir = Path("registry")
-        if default_dir.exists() and default_dir.is_dir():
-            target_registry_dir = default_dir
-        else:
-            addons_dir = Path.cwd() / "registry" / "addons"
-            target_registry_dir = addons_dir if addons_dir.exists() else Path.cwd() / "registry"
-
-    if not target_registry_dir.exists():
-        _handle_error(
-            f"Registry directory '{target_registry_dir}' not found.",
-            exit_code=ExitCode.INVALID_INPUT,
-            json_output=json_output,
-            addon_id=addon_id,
-            scope=scope,
-            agent=agent_id or "",
-        )
-
-    # 2. Load registry and manifest
-    registry, _ = Registry.from_directory(target_registry_dir)
+    # 1 & 2. Load registry and manifest
+    registry, _source = Registry.load_auto(custom_dir=registry_path)
     manifest = registry.get(addon_id)
     if not manifest:
         _handle_error(

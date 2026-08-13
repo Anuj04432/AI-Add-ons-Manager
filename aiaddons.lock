@@ -7,4 +7,4 @@ addons:
     integration_type: mcp
     target_agent: claude-code
     checksum: null
-    installed_at: '2026-08-12T17:50:13.991582+00:00'
+    installed_at: '2026-08-13T11:46:06.732284+00:00'

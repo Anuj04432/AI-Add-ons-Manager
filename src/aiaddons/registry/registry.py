@@ -5,9 +5,13 @@ from __future__ import annotations
 from builtins import list as builtins_list
 from collections.abc import Sequence
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from aiaddons.core.models.manifest import IntegrationManifest, IntegrationType
 from aiaddons.registry.loader import RegistryLoader, RegistryLoadResult
+
+if TYPE_CHECKING:
+    from aiaddons.registry.cache import RegistryCacheManager
 
 
 class Registry:
@@ -27,6 +31,45 @@ class Registry:
         registry = cls(manifests=list(result.manifests.values()))
         return registry, result
 
+    @classmethod
+    def from_cache(cls, cache_manager: RegistryCacheManager | None = None) -> Registry | None:
+        """Create a Registry instance by loading from the local registry cache."""
+        from aiaddons.registry.cache import RegistryCacheManager
+
+        mgr = cache_manager if cache_manager is not None else RegistryCacheManager()
+        return mgr.get_registry()
+
+    @classmethod
+    def load_auto(
+        cls,
+        custom_dir: Path | None = None,
+        cache_manager: RegistryCacheManager | None = None,
+    ) -> tuple[Registry, str]:
+        """Automatically resolve and load Registry.
+
+        Priority:
+        1. Explicit custom_dir (if provided and exists)
+        2. Local registry cache (if valid cache file exists)
+        3. Fallback local registry directory (cwd / 'registry' / 'addons')
+        Returns (Registry, source_description).
+        """
+        if custom_dir is not None and custom_dir.exists() and custom_dir.is_dir():
+            reg, _ = cls.from_directory(custom_dir)
+            return reg, f"directory:{custom_dir}"
+
+        # Try loading from local cache
+        cached_reg = cls.from_cache(cache_manager)
+        if cached_reg is not None and cached_reg.count() > 0:
+            return cached_reg, "cache"
+
+        # Fallback to local codebase directory if it exists
+        default_dir = Path.cwd() / "registry" / "addons"
+        if default_dir.exists() and default_dir.is_dir():
+            reg, _ = cls.from_directory(default_dir)
+            return reg, f"directory:{default_dir}"
+
+        return cls(), "empty"
+
     def add_manifest(self, manifest: IntegrationManifest) -> None:
         """Add or update a manifest entry in the registry."""
         self._manifests[manifest.id] = manifest
@@ -44,7 +87,7 @@ class Registry:
         return len(self._manifests)
 
     def search(self, query: str) -> builtins_list[IntegrationManifest]:
-        """Search manifests matching ID, name, description, tags, category, or publisher."""
+        """Search manifests matching query against ID, name, description, tags, and metadata."""
         q = query.strip().lower()
         if not q:
             return self.list()
@@ -56,8 +99,10 @@ class Registry:
                 or q in m.name.lower()
                 or q in m.description.lower()
                 or q in m.category.lower()
+                or q in m.integration_type.value.lower()
                 or q in m.trust.publisher.name.lower()
                 or any(q in tag.lower() for tag in m.tags)
+                or any(q in agent.lower() for agent in m.target_agents)
             ):
                 results.append(m)
 

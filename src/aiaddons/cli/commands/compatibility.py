@@ -52,8 +52,7 @@ def check_command(
         console.print(f"[bold red]Error:[/bold red] {e}")
         raise typer.Exit(code=1) from e
 
-    target_dir = registry_dir if registry_dir is not None else Path.cwd() / "registry" / "addons"
-    registry, _ = Registry.from_directory(target_dir)
+    registry, _ = Registry.load_auto(custom_dir=registry_dir)
 
     manifest = registry.get(addon_id)
     if not manifest:

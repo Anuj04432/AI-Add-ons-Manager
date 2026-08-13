@@ -550,3 +550,70 @@ Start with **Task 1: Core Foundation & Package Setup**:
 1. Create `pyproject.toml` configuring `hatchling` as the build backend and declaring key dependencies (`typer`, `rich`, `textual`, `pydantic`, `httpx`, `packaging`).
 2. Create the package directory structure inside `src/aiaddons/`.
 3. Implement the core Pydantic domain schemas in `src/aiaddons/core/models/manifest.py` (`IntegrationManifest`, `AgentDetectionResult`, `RegistryIndex`).
+
+---
+
+## 18. Phase 6A — Registry Synchronization & Distribution Architecture
+
+Phase 6A introduces a secure, metadata-driven registry synchronization layer allowing `aiaddons` to fetch, validate, cache, search, and inspect add-on manifests from trusted remote registries.
+
+> **Fundamental Security Principle**:
+> **Registry metadata describes WHAT.**
+> **Trusted application code determines HOW.**
+
+### 18.1 Key Architectural Components
+
+```mermaid
+graph TD
+    CLI[Typer CLI: update / status / search / info] --> Client[RegistryClient]
+    Client -- HTTPS Fetch --> Remote[Trusted Remote Registry]
+    Client --> Val[RegistryValidator]
+    Val --> Schema[RegistryIndex / Pydantic Models]
+    Val -- Valid Index --> Cache[RegistryCacheManager]
+    Cache -- Atomic Temp Write & Replace --> DiskCache["~/.aiaddons/registry/cache.json"]
+    DiskCache --> Query[Registry In-Memory Engine]
+```
+
+1. **Registry Domain Index (`RegistryIndex`)**:
+   Pydantic v2 model configured with `extra="forbid"`. Standardized schema versioning (`schema_version: "1.0"`), ISO generation timestamp (`generated_at`), and unique add-on manifest list (`manifests`). Rejects duplicate add-on IDs, unsupported schema versions, or unrecognised fields.
+
+2. **Registry Validator (`RegistryValidator`)**:
+   Dedicated validation layer executing deep manifest validation before accepting remote metadata:
+   - Unique add-on ID verification across all index entries.
+   - Source installability checks (`source.check_installable()`).
+   - Cryptographic SHA-256 checksum format verification (`sha256:[a-fA-F0-9]{64}`).
+   - Git commit SHA hex verification (`^[a-fA-F0-9]{40}$`).
+   - Strict path traversal prevention (`validate_safe_relative_path`).
+   - Package name sanitization (`validate_mcp_package_name`).
+   - Environment variable identifier & restriction checks (`validate_env_var_name`).
+   - Shell metacharacter rejection (`FORBIDDEN_SHELL_PATTERNS`).
+
+3. **Trusted Remote Registry Client (`RegistryClient`)**:
+   Fetches remote registry metadata using `httpx`.
+   - **HTTPS Enforcement**: Rejects unencrypted `http://` URLs (allowing `localhost`/`127.0.0.1` strictly for local dev/testing).
+   - **Timeout Controls**: Enforces explicit HTTP connection and read timeouts.
+   - **Error Handling**: Converts HTTP 4xx/5xx, timeouts, network failures, and JSON syntax errors into typed `RegistryFetchError` exceptions.
+   - **Zero Code Execution**: Downloads pure metadata; never evaluates scripts, executes subprocesses, or interprets strings as shell commands.
+
+4. **Atomic Local Cache Manager (`RegistryCacheManager`)**:
+   Manages local cache persistence at `~/.aiaddons/registry/cache.json`.
+   - **Atomic File Updates**: Writes payload to a temporary file (`NamedTemporaryFile`), flushes and syncs (`os.fsync`), and replaces target atomically (`os.replace`).
+   - **Corrupt Cache Protection**: A failed download or invalid schema validation aborts the update process and leaves the previous valid local cache untouched.
+   - **Cache Status Reporting**: Provides `aiaddons registry status` metadata (cache path, schema version, last synced timestamp, add-on count, validity status, sync requirement).
+
+5. **Local Offline Search & Inspection (`aiaddons search` & `aiaddons info`)**:
+   - `aiaddons search <query>` performs keyword matching against ID, name, description, tags, category, publisher, and integration type using the local validated cache without issuing network requests.
+   - `aiaddons info <addon-id>` displays detailed manifest metadata including security allowed executables, cryptographic source pins, dependencies, and child components for composite plugins.
+
+6. **Composite Plugin Handling**:
+   Integrations of type `plugin` retain child component references (`handler_spec.plugin.components`). `CompatibilityEngine` resolves child components dynamically without assuming `IntegrationType.PLUGIN == AgentCapability.PLUGIN`.
+
+7. **Side-Effect Safety & Boundaries**:
+   Registry synchronization (`aiaddons registry update`) writes **ONLY** to the local registry cache file (`~/.aiaddons/registry/cache.json`). It **NEVER**:
+   - executes subprocesses or scripts
+   - installs external packages
+   - modifies agent configuration files (`~/.claude.json`, `~/.codex/`)
+   - modifies installed state (`~/.aiaddons/state.json`)
+   - modifies lockfiles (`aiaddons.lock`)
+   - creates transaction WAL entries
+
