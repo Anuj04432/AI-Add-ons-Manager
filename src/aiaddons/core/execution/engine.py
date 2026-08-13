@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from aiaddons.core.acquisition.models import AcquiredSourceResult
 from aiaddons.core.exceptions import InstallationError, SecurityValidationError
 from aiaddons.core.execution.external.models import ExternalExecutionRequest, ExternalRuntime
 from aiaddons.core.execution.external.runner import ExternalRunner
@@ -42,7 +43,11 @@ from aiaddons.core.installer.models import (
     WriteFileOperation,
 )
 from aiaddons.core.models.agent import Scope
-from aiaddons.core.models.manifest import MCPRuntime
+from aiaddons.core.models.manifest import (
+    MCPRuntime,
+    SourceType,
+    validate_safe_relative_path,
+)
 from aiaddons.core.verification.engine import VerificationEngine
 from aiaddons.core.verification.models import VerificationStatus
 from aiaddons.state.lockfile import LockfileAddonEntry, LockfileManager
@@ -50,6 +55,7 @@ from aiaddons.state.store import InstalledAddonRecord, InstalledStateStore
 
 if TYPE_CHECKING:
     from aiaddons.core.acquisition.engine import AcquisitionEngine
+    from aiaddons.registry.registry import Registry
     from aiaddons.state.transaction import TransactionWALManager
 
 
@@ -113,12 +119,14 @@ class ExecutionEngine:
         lockfile_manager: LockfileManager | None = None,
         verification_engine: VerificationEngine | None = None,
         acquisition_engine: AcquisitionEngine | None = None,
+        registry: Registry | None = None,
     ) -> None:
         self.external_runner = external_runner or ExternalRunner()
         self.wal_manager = wal_manager
         self.state_store = state_store
         self.lockfile_manager = lockfile_manager
         self.verification_engine = verification_engine or VerificationEngine()
+        self.registry = registry
         from aiaddons.core.acquisition.engine import AcquisitionEngine
 
         self.acquisition_engine = acquisition_engine or AcquisitionEngine(
@@ -131,6 +139,7 @@ class ExecutionEngine:
         transaction: InstallationTransaction | None = None,
         dry_run: bool = False,
         secret_values: dict[str, str] | None = None,
+        registry: Registry | None = None,
     ) -> ExecutionResult:
         """Execute operations in an installation plan with safety validation and rollback."""
         plan.validate_safety()
@@ -164,7 +173,7 @@ class ExecutionEngine:
 
         tx_id = transaction.transaction_id if transaction else f"tx_anon_{plan.addon_id}"
         try:
-            self.acquisition_engine.acquire_source(
+            acquired_result = self.acquisition_engine.acquire_source(
                 manifest_id=plan.addon_id,
                 source=plan.source,
                 transaction_id=tx_id,
@@ -181,6 +190,9 @@ class ExecutionEngine:
                 if self.wal_manager:
                     self.wal_manager.write_transaction(transaction)
 
+            if not dry_run:
+                self.acquisition_engine.cleanup_staging(tx_id)
+
             return ExecutionResult(
                 addon_id=plan.addon_id,
                 target_agent=plan.target_agent,
@@ -188,6 +200,55 @@ class ExecutionEngine:
                 status=ExecutionStatus.FAILED,
                 error_message=err_msg,
             )
+
+        # Bind staged source directory to plan operations
+        staged_addon_dir = acquired_result.staging_path
+        if plan.source and plan.source.path and plan.source.path not in (".", ""):
+            try:
+                clean_rel = validate_safe_relative_path(plan.source.path)
+                if clean_rel:
+                    candidate_sub = acquired_result.staging_path / clean_rel
+                    if candidate_sub.exists():
+                        staged_addon_dir = candidate_sub
+            except ValueError as err:
+                err_msg = mask_secrets_in_text(
+                    f"Security violation in source path '{plan.source.path}': {err}", secrets_list
+                )
+                if transaction:
+                    transaction.phase = TransactionPhase.FAILED
+                    transaction.error_message = err_msg
+                    if self.wal_manager:
+                        self.wal_manager.write_transaction(transaction)
+                    transaction.phase = TransactionPhase.ROLLED_BACK
+                    if self.wal_manager:
+                        self.wal_manager.write_transaction(transaction)
+                if not dry_run:
+                    self.acquisition_engine.cleanup_staging(tx_id)
+
+                return ExecutionResult(
+                    addon_id=plan.addon_id,
+                    target_agent=plan.target_agent,
+                    scope=plan.target_scope,
+                    status=ExecutionStatus.FAILED,
+                    error_message=err_msg,
+                )
+
+        for op in plan.planned_operations:
+            if isinstance(op, AddSkillOperation):
+                try:
+                    if (
+                        not op.source_dir
+                        or not Path(op.source_dir).is_relative_to(staged_addon_dir)
+                    ):
+                        op.source_dir = str(staged_addon_dir)
+                except ValueError:
+                    op.source_dir = str(staged_addon_dir)
+            elif isinstance(op, CopyFileOperation):
+                try:
+                    if not Path(op.source_path).is_relative_to(staged_addon_dir):
+                        op.source_path = str(staged_addon_dir / op.source_path)
+                except ValueError:
+                    op.source_path = str(staged_addon_dir / op.source_path)
 
         if transaction:
             transaction.phase = TransactionPhase.EXECUTING
@@ -201,7 +262,10 @@ class ExecutionEngine:
         for op in plan.planned_operations:
             try:
                 rollback_action = self._dispatch_operation(
-                    op, dry_run=dry_run, secret_values=secret_values
+                    op,
+                    dry_run=dry_run,
+                    secret_values=secret_values,
+                    acquired_result=acquired_result,
                 )
                 rollback_stack.append(rollback_action)
                 executed_results.append(
@@ -241,6 +305,9 @@ class ExecutionEngine:
                     if self.wal_manager:
                         self.wal_manager.write_transaction(transaction)
 
+                if not dry_run:
+                    self.acquisition_engine.cleanup_staging(tx_id)
+
                 return ExecutionResult(
                     addon_id=plan.addon_id,
                     target_agent=plan.target_agent,
@@ -277,6 +344,9 @@ class ExecutionEngine:
                 transaction.phase = TransactionPhase.ROLLED_BACK
                 if self.wal_manager:
                     self.wal_manager.write_transaction(transaction)
+
+            if not dry_run:
+                self.acquisition_engine.cleanup_staging(tx_id)
 
             return ExecutionResult(
                 addon_id=plan.addon_id,
@@ -337,6 +407,9 @@ class ExecutionEngine:
                     if self.wal_manager:
                         self.wal_manager.write_transaction(transaction)
 
+                if not dry_run:
+                    self.acquisition_engine.cleanup_staging(tx_id)
+
                 return ExecutionResult(
                     addon_id=plan.addon_id,
                     target_agent=plan.target_agent,
@@ -353,6 +426,8 @@ class ExecutionEngine:
                 self.wal_manager.write_transaction(transaction)
             if not dry_run:
                 self.acquisition_engine.cleanup_staging(transaction.transaction_id)
+        elif not dry_run:
+            self.acquisition_engine.cleanup_staging(tx_id)
 
         return ExecutionResult(
             addon_id=plan.addon_id,
@@ -367,6 +442,7 @@ class ExecutionEngine:
         op: BaseOperation,
         dry_run: bool = False,
         secret_values: dict[str, str] | None = None,
+        acquired_result: AcquiredSourceResult | None = None,
     ) -> RollbackAction:
         """Dispatch a single operation to its execution primitive."""
         if dry_run:
@@ -408,6 +484,18 @@ class ExecutionEngine:
             )
 
         elif isinstance(op, CopyFileOperation):
+            if op.source_path and acquired_result and not dry_run and acquired_result.is_staged:
+                src_path = Path(op.source_path).expanduser().resolve()
+                staging_root = acquired_result.staging_path.expanduser().resolve()
+                if src_path != staging_root:
+                    try:
+                        src_path.relative_to(staging_root)
+                    except ValueError as err:
+                        raise SecurityValidationError(
+                            f"Security violation: Copy source path '{op.source_path}' escapes "
+                            f"verified staging boundary '{staging_root}'."
+                        ) from err
+
             _, dest = verify_safe_target_path(op.target_root, op.destination_path)
             existed = dest.exists()
             backup = dest.read_text(encoding="utf-8") if (existed and dest.is_file()) else None
@@ -512,6 +600,18 @@ class ExecutionEngine:
             return rollback_action
 
         elif isinstance(op, AddSkillOperation):
+            if op.source_dir and acquired_result and not dry_run and acquired_result.is_staged:
+                src_path = Path(op.source_dir).expanduser().resolve()
+                staging_root = acquired_result.staging_path.expanduser().resolve()
+                if src_path != staging_root:
+                    try:
+                        src_path.relative_to(staging_root)
+                    except ValueError as err:
+                        raise SecurityValidationError(
+                            f"Security violation: Skill source directory '{op.source_dir}' escapes "
+                            f"verified staging boundary '{staging_root}'."
+                        ) from err
+
             skill_dest_dir = op.destination_dir
             skill_file_path = f"{op.destination_dir}/{op.skill_file}"
             _, dest_dir_path = verify_safe_target_path(op.target_root, skill_dest_dir)
@@ -547,22 +647,31 @@ class ExecutionEngine:
                         f" source directory '{src_dir_path}'."
                     )
                     raise SecurityValidationError(msg)
-                if not src_skill_file.exists() or not src_skill_file.is_file():
+
+                if src_skill_file.exists() and src_skill_file.is_file():
+                    if src_skill_file.is_symlink():
+                        sym_target = src_skill_file.resolve()
+                        if not sym_target.is_relative_to(src_dir_path):
+                            msg = (
+                                f"Security violation: Symlink skill file '{op.skill_file}'"
+                                " escapes source directory."
+                            )
+                            raise SecurityValidationError(msg)
+                    resolved_skill_content = src_skill_file.read_text(encoding="utf-8")
+                elif acquired_result and acquired_result.source_type in (
+                    SourceType.LOCAL,
+                    SourceType.GIT,
+                    SourceType.URL,
+                ):
                     msg = (
                         f"Required skill file '{op.skill_file}' missing from source"
                         f" directory '{src_dir_path}'."
                     )
                     raise InstallationError(msg)
-                if src_skill_file.is_symlink():
-                    sym_target = src_skill_file.resolve()
-                    if not sym_target.is_relative_to(src_dir_path):
-                        msg = (
-                            f"Security violation: Symlink skill file '{op.skill_file}'"
-                            " escapes source directory."
-                        )
-                        raise SecurityValidationError(msg)
-
-                resolved_skill_content = src_skill_file.read_text(encoding="utf-8")
+                else:
+                    resolved_skill_content = (
+                        f"# Skill: {op.skill_name}\n\nInstructions for {op.skill_name}."
+                    )
             else:
                 resolved_skill_content = (
                     f"# Skill: {op.skill_name}\n\nInstructions for {op.skill_name}."
@@ -595,21 +704,29 @@ class ExecutionEngine:
                             " source directory."
                         )
                         raise SecurityValidationError(msg)
-                    if not src_supp_file.exists() or not src_supp_file.is_file():
+
+                    if src_supp_file.exists() and src_supp_file.is_file():
+                        if src_supp_file.is_symlink():
+                            sym_target = src_supp_file.resolve()
+                            if not sym_target.is_relative_to(src_dir_path):
+                                msg = (
+                                    "Security violation: Supporting file symlink"
+                                    f" '{supp}' escapes source directory."
+                                )
+                                raise SecurityValidationError(msg)
+                        supp_content = src_supp_file.read_text(encoding="utf-8")
+                    elif acquired_result and acquired_result.source_type in (
+                        SourceType.LOCAL,
+                        SourceType.GIT,
+                        SourceType.URL,
+                    ):
                         msg = (
                             f"Supporting file '{supp}' missing from source"
                             f" directory '{src_dir_path}'."
                         )
                         raise InstallationError(msg)
-                    if src_supp_file.is_symlink():
-                        sym_target = src_supp_file.resolve()
-                        if not sym_target.is_relative_to(src_dir_path):
-                            msg = (
-                                "Security violation: Supporting file symlink"
-                                f" '{supp}' escapes source directory."
-                            )
-                            raise SecurityValidationError(msg)
-                    supp_content = src_supp_file.read_text(encoding="utf-8")
+                    else:
+                        supp_content = f"# Supporting file '{supp}' for skill '{op.skill_name}'\n"
                 else:
                     supp_content = f"# Supporting file '{supp}' for skill '{op.skill_name}'\n"
 

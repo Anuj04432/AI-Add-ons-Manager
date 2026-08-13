@@ -670,4 +670,73 @@ Registry Manifest → CompatibilityEngine → InstallationPlan → AcquisitionEn
 - Phase 6B does NOT execute repository build scripts, `Makefile`s, or arbitrary package setup commands.
 - Downloadable archives are restricted to `.zip`, `.tar`, `.tar.gz`/`.tgz`, `.tar.xz`.
 
+---
+
+## 20. Phase 6C — Staged Source Binding & Transaction Integrity Architecture
+
+Phase 6C completes the end-to-end integration pipeline by binding the verified staged source output from `AcquisitionEngine` directly into `ExecutionEngine` operation execution, enforcing staging containment boundaries, ensuring explicit transaction lifecycle transitions, and maintaining atomic transaction rollback and staging cleanup.
+
+### 20.1 End-to-End Pipeline Diagram
+
+```
++------------------+     +-----------------------+     +-------------------+
+| Registry Manifest| --> |  CompatibilityEngine  | --> |  InstallationPlan |
++------------------+     +-----------------------+     +-------------------+
+                                                                 |
+                                                                 v
++------------------+     +-----------------------+     +-------------------+
+| Transaction WAL  | <-- |   AcquisitionEngine   | <-- |  Transaction Init |
+| (WAL Persistence)|     | (Acquire & Stage Src) |     |  (Phase: PLANNED) |
++------------------+     +-----------------------+     +-------------------+
+                                     |
+                                     v
+                         +-----------------------+
+                         | Staged Source Binding |
+                         | (staging_path / rel)  |
+                         +-----------------------+
+                                     |
+                                     v
+                         +-----------------------+
+                         |    ExecutionEngine    |
+                         |  (Staging Containment |
+                         |   & Primitive Ops)    |
+                         +-----------------------+
+                                     |
+                                     v
+                         +-----------------------+
+                         |   VerificationEngine  |
+                         | (Post-Execution Ver)  |
+                         +-----------------------+
+                                     |
+                                     v
++------------------+     +-----------------------+     +-------------------+
+|  State & Lockfile| <-- |   Commit & Cleanup    | <-- | Transaction Phase |
+|  (~/.aiaddons)   |     | (Staging Directory)   |     |   (COMMITTED)     |
++------------------+     +-----------------------+     +-------------------+
+```
+
+### 20.2 Key Staged Source Binding Rules
+1. **Acquisition & Staging Binding**:
+   During execution, `ExecutionEngine` invokes `AcquisitionEngine.acquire_source()` during `TransactionPhase.SOURCE_ACQUISITION`. The resulting `AcquiredSourceResult.staging_path` becomes the canonical root directory for all operation source references.
+
+2. **Operation Subpath Resolution**:
+   If `plan.source.path` specifies a relative path within the source archive/repo, `staged_addon_dir` resolves to `staging_path / validate_safe_relative_path(plan.source.path)` if that subdirectory exists, defaulting to `staging_path`.
+
+3. **Staging Boundary Confinement**:
+   Before executing `AddSkillOperation` or `CopyFileOperation`, `ExecutionEngine._dispatch_operation` resolves the source directory/file path and verifies that it is strictly contained within `acquired_result.staging_path` via `is_relative_to()`. If an operation attempts to reference a path outside the staged directory (e.g., path traversal or absolute symlinks), execution halts immediately and raises `SecurityValidationError`.
+
+4. **Transaction State Machine Lifecycle**:
+   Transactions traverse the exact state machine:
+   `REQUESTED` → `COMPATIBILITY_CHECKED` → `PLANNED` → `SOURCE_ACQUISITION` → `EXECUTING` → `VERIFIED` → `COMMITTED` (or `FAILED` → `ROLLED_BACK`).
+
+5. **Automatic Staging Cleanup**:
+   Upon transaction completion (either `COMMITTED` or `ROLLED_BACK`), `ExecutionEngine` invokes `AcquisitionEngine.cleanup_staging(tx_id)` when `dry_run=False`, ensuring zero orphaned staging folders remain in `~/.aiaddons/staging/`.
+
+6. **Dry-Run Zero Side-Effect Guarantee**:
+   When `--dry-run` is active, `ExecutionEngine` and `AcquisitionEngine` bypass subprocess calls, network requests, disk mutations, state store writes, lockfile updates, and WAL log persistence.
+
+7. **Secret Non-Persistence**:
+   All error outputs and WAL logs filter sensitive environment variables and credentials using `mask_secrets_in_text`, ensuring secrets are never persisted or printed in plain text.
+
+
 
