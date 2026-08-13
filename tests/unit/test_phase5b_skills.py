@@ -65,9 +65,12 @@ def real_skill_manifest(tmp_path: Path) -> tuple[IntegrationManifest, Path]:
 
 
 def test_real_skill_bundle_installation(
-    tmp_path: Path, real_skill_manifest: tuple[IntegrationManifest, Path]
+    tmp_path: Path,
+    real_skill_manifest: tuple[IntegrationManifest, Path],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Verify real skill bundle installation copies SKILL.md and supporting files."""
+    monkeypatch.chdir(tmp_path)
     manifest, src_dir = real_skill_manifest
     adapter = ClaudeCodeAdapter()
     agent = adapter.detect(project_path=tmp_path)
@@ -98,8 +101,11 @@ def test_real_skill_bundle_installation(
     assert "RULE = True" in installed_supp.read_text(encoding="utf-8")
 
 
-def test_missing_skill_file_in_source_raises_error(tmp_path: Path) -> None:
+def test_missing_skill_file_in_source_raises_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Verify missing SKILL.md in source directory raises InstallationError and rolls back."""
+    monkeypatch.chdir(tmp_path)
     src_dir = tmp_path / "empty_source"
     src_dir.mkdir(parents=True, exist_ok=True)
 

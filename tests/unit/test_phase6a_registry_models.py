@@ -110,9 +110,7 @@ def test_validator_rejects_invalid_checksum_format() -> None:
     raw_data = {
         "schema_version": "1.0",
         "generated_at": "2026-08-13T12:00:00Z",
-        "manifests": [
-            _make_valid_manifest(checksum="sha256:short_invalid_hash").model_dump()
-        ],
+        "manifests": [_make_valid_manifest(checksum="sha256:short_invalid_hash").model_dump()],
     }
     with pytest.raises(ManifestValidationError) as exc_info:
         validate_registry_data(raw_data)

@@ -83,9 +83,7 @@ class RegistryCacheManager:
             cache_data = RegistryCacheData.model_validate(raw_json)
 
             # Re-run granular manifest validations on the cached index
-            validate_registry_data(
-                cache_data.index.model_dump(), source_label=str(self.cache_file)
-            )
+            validate_registry_data(cache_data.index.model_dump(), source_label=str(self.cache_file))
 
             return cache_data, None
         except (

@@ -74,3 +74,19 @@ class VerificationFailedError(VerificationError):
 
 class VerificationPathSecurityError(VerificationError, SecurityValidationError):
     """Exception raised when verification detects path traversal or target root escape."""
+
+
+class SourceAcquisitionError(InstallationError):
+    """Base exception for add-on source acquisition failures."""
+
+
+class ChecksumMismatchError(SourceAcquisitionError):
+    """Error raised when downloaded content hash does not match manifest checksum."""
+
+
+class ArchiveSecurityError(SourceAcquisitionError, SecurityValidationError):
+    """Error raised when archive extraction detects security violations (ZipSlip, symlinks)."""
+
+
+class GitAcquisitionError(SourceAcquisitionError):
+    """Error raised when git clone, fetch, or checkout fails."""

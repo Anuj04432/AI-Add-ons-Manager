@@ -617,3 +617,57 @@ graph TD
    - modifies lockfiles (`aiaddons.lock`)
    - creates transaction WAL entries
 
+---
+
+## 19. Phase 6B — Secure Source Acquisition, Verification & Staging Architecture
+
+Phase 6B introduces a secure, pluggable source acquisition and staging subsystem (`src/aiaddons/core/acquisition/`) that runs between Plan Generation and Execution in the transaction lifecycle.
+
+```text
+Registry Manifest → CompatibilityEngine → InstallationPlan → AcquisitionEngine → Staged Source → ExecutionEngine → VerificationEngine → Commit
+```
+
+### 18.1 Source Fetcher Implementations & Security
+1. **`GitSourceFetcher` (`SourceType.GIT`)**:
+   - Executes `git` commands via `ExternalRunner` (`shell=False`, allowlisted executable).
+   - Enforces an immutable 40-character hexadecimal `commit_sha`. Rejects mutable branch or tag references without explicit cryptographic commit SHA pinning.
+   - Disables git submodules (`--no-recurse-submodules`) and git hooks (`-c core.hooksPath=/dev/null`).
+   - Verifies checked out `HEAD` commit SHA matches expected `commit_sha` via `git rev-parse HEAD`.
+   - Never executes repository scripts or build commands.
+
+2. **`UrlSourceFetcher` (`SourceType.URL`)**:
+   - Enforces HTTPS for remote endpoints (allowing `localhost`/`127.0.0.1` strictly for local testing).
+   - Streams downloads in 64KB chunks using `httpx`, computing SHA-256 checksums on the fly.
+   - Compares computed SHA-256 digest against `SourceSpec.checksum`. Raises `ChecksumMismatchError` and deletes corrupted temp files on mismatch.
+   - Enforces download size limits (100 MB default) and connection/read timeouts (30s).
+
+3. **`SafeArchiveExtractor` (`extractor.py`)**:
+   - Extractor for `.zip`, `.tar`, `.tar.gz`/`.tgz`, `.tar.xz` archives into isolated staging directories.
+   - Pre-validates ALL entries before extracting any file.
+   - Prevents ZipSlip / TarSlip path traversal (`validate_safe_relative_path` and `verify_safe_target_path`).
+   - Rejects absolute paths, Windows drive letters (`C:`), UNC paths (`\\\\`, `//`), URL-encoded traversal (`%2e%2e`), null bytes (`\0`), symbolic/hard links pointing outside staging root, FIFO/device files, and setuid/setgid entries.
+   - Zip Bomb Defense: Enforces resource limits on max file count (10,000 files), max uncompressed size (100 MB), and max compression ratio (100:1).
+
+4. **`LocalSourceFetcher` (`SourceType.LOCAL`)**:
+   - Validates local source path against path traversal and symlink escape rules.
+   - Copies local files/directories safely into staging, or handles dot paths (`.`) without recursive repository duplication.
+
+5. **`PackageSourceFetcher` (`SourceType.PACKAGE`)**:
+   - Validates MCP package names (`validate_mcp_package_name`) to reject argument injection vectors.
+   - Delegates URL package archives to `UrlSourceFetcher` with SHA-256 verification.
+
+### 18.2 Staging Lifecycle (`SourceStagingManager`)
+- Isolates transaction staging at `~/.aiaddons/staging/<transaction_id>/`.
+- Applies restrictive permissions (`0700`) where supported.
+- Cleans up staging directories automatically upon transaction commit or rollback, with Windows file-handle safety.
+
+### 18.3 Transaction Lifecycle & Dry-Run Guarantees
+- Introduces `TransactionPhase.SOURCE_ACQUISITION` in the WAL state pipeline.
+- If source acquisition or checksum verification fails, the transaction transitions to `FAILED` → `ROLLED_BACK`, preventing execution of downstream operations.
+- **`--dry-run` Guarantees**: Running with `--dry-run` performs ZERO network requests, ZERO `git` subprocess calls, ZERO archive extractions, ZERO disk writes, ZERO WAL entries, and ZERO secret prompts.
+
+### 18.4 Limitations
+- Phase 6B does NOT execute repository build scripts, `Makefile`s, or arbitrary package setup commands.
+- Downloadable archives are restricted to `.zip`, `.tar`, `.tar.gz`/`.tgz`, `.tar.xz`.
+
+

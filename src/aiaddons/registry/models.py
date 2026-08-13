@@ -15,9 +15,7 @@ class RegistryIndex(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     schema_version: str = "1.0"
-    generated_at: str = Field(
-        default_factory=lambda: datetime.now(UTC).isoformat()
-    )
+    generated_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
     manifests: list[IntegrationManifest] = Field(default_factory=list)
 
     @field_validator("schema_version")
@@ -42,8 +40,6 @@ class RegistryIndex(BaseModel):
         for manifest in v:
             clean_id = manifest.id.strip().lower()
             if clean_id in seen_ids:
-                raise ValueError(
-                    f"Duplicate add-on ID '{manifest.id}' detected in registry index."
-                )
+                raise ValueError(f"Duplicate add-on ID '{manifest.id}' detected in registry index.")
             seen_ids.add(clean_id)
         return v

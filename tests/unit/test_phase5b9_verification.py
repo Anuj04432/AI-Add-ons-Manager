@@ -45,7 +45,11 @@ def _create_sample_plan(target_root: Path, ops: list[BaseOperation]) -> Installa
         target_agent_name="Claude Code",
         target_scope=Scope.WORKSPACE,
         integration_type="mcp",  # type: ignore[arg-type]
-        source=SourceSpec(source_type="package", package_name="@test/addon"),  # type: ignore[arg-type]
+        source=SourceSpec(
+            source_type="package",  # type: ignore[arg-type]
+            package_name="@test/addon",
+            checksum="sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        ),
         planned_operations=ops,
         risk_level=RiskLevel.LOW,
         reversible=True,

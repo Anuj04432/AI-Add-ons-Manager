@@ -49,6 +49,7 @@ from aiaddons.state.lockfile import LockfileAddonEntry, LockfileManager
 from aiaddons.state.store import InstalledAddonRecord, InstalledStateStore
 
 if TYPE_CHECKING:
+    from aiaddons.core.acquisition.engine import AcquisitionEngine
     from aiaddons.state.transaction import TransactionWALManager
 
 
@@ -111,12 +112,18 @@ class ExecutionEngine:
         state_store: InstalledStateStore | None = None,
         lockfile_manager: LockfileManager | None = None,
         verification_engine: VerificationEngine | None = None,
+        acquisition_engine: AcquisitionEngine | None = None,
     ) -> None:
         self.external_runner = external_runner or ExternalRunner()
         self.wal_manager = wal_manager
         self.state_store = state_store
         self.lockfile_manager = lockfile_manager
         self.verification_engine = verification_engine or VerificationEngine()
+        from aiaddons.core.acquisition.engine import AcquisitionEngine
+
+        self.acquisition_engine = acquisition_engine or AcquisitionEngine(
+            runner=self.external_runner
+        )
 
     def execute_plan(
         self,
@@ -147,6 +154,39 @@ class ExecutionEngine:
                 scope=plan.target_scope,
                 status=ExecutionStatus.UNSUPPORTED,
                 error_message=mask_secrets_in_text(err_msg, secrets_list),
+            )
+
+        # Execute Source Acquisition Phase
+        if transaction:
+            transaction.phase = TransactionPhase.SOURCE_ACQUISITION
+            if self.wal_manager:
+                self.wal_manager.write_transaction(transaction)
+
+        tx_id = transaction.transaction_id if transaction else f"tx_anon_{plan.addon_id}"
+        try:
+            self.acquisition_engine.acquire_source(
+                manifest_id=plan.addon_id,
+                source=plan.source,
+                transaction_id=tx_id,
+                dry_run=dry_run,
+            )
+        except Exception as exc:
+            err_msg = mask_secrets_in_text(f"Source acquisition failed: {exc}", secrets_list)
+            if transaction:
+                transaction.phase = TransactionPhase.FAILED
+                transaction.error_message = err_msg
+                if self.wal_manager:
+                    self.wal_manager.write_transaction(transaction)
+                transaction.phase = TransactionPhase.ROLLED_BACK
+                if self.wal_manager:
+                    self.wal_manager.write_transaction(transaction)
+
+            return ExecutionResult(
+                addon_id=plan.addon_id,
+                target_agent=plan.target_agent,
+                scope=plan.target_scope,
+                status=ExecutionStatus.FAILED,
+                error_message=err_msg,
             )
 
         if transaction:
@@ -311,6 +351,8 @@ class ExecutionEngine:
             transaction.phase = TransactionPhase.COMMITTED
             if self.wal_manager:
                 self.wal_manager.write_transaction(transaction)
+            if not dry_run:
+                self.acquisition_engine.cleanup_staging(transaction.transaction_id)
 
         return ExecutionResult(
             addon_id=plan.addon_id,

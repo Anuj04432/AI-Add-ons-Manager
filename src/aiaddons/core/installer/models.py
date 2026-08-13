@@ -442,6 +442,7 @@ class TransactionPhase(StrEnum):
     COMPATIBILITY_CHECKED = "compatibility_checked"
     PLANNED = "planned"
     REVIEWED = "reviewed"
+    SOURCE_ACQUISITION = "source_acquisition"
     EXECUTING = "executing"
     VERIFIED = "verified"
     COMMITTED = "committed"
