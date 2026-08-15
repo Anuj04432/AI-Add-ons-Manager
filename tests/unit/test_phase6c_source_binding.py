@@ -22,6 +22,7 @@ from aiaddons.core.execution.models import ExecutionStatus
 from aiaddons.core.installer.engine import InstallationEngine
 from aiaddons.core.installer.models import (
     AddSkillOperation,
+    InstallationTransaction,
     TransactionPhase,
 )
 from aiaddons.core.models.agent import AgentCapability, AgentDetectionResult, Scope
@@ -138,9 +139,7 @@ def test_phase6c_successful_source_acquisition_to_installation(
                 "path": "my_skill_source",
             },
             "trust": {"verification_status": "verified", "publisher": {"name": "Dev"}},
-            "handler_spec": {
-                "skill": {"skill_file": "SKILL.md", "supporting_files": ["rules.py"]}
-            },
+            "handler_spec": {"skill": {"skill_file": "SKILL.md", "supporting_files": ["rules.py"]}},
         }
     )
 
@@ -151,6 +150,7 @@ def test_phase6c_successful_source_acquisition_to_installation(
 
     installer = InstallationEngine(wal_manager=wal_manager)
     tx = installer.create_transaction(manifest, sample_agent, Scope.WORKSPACE)
+    assert tx.plan is not None
 
     for op in tx.plan.planned_operations:
         op.target_root = str(target_root)
@@ -206,6 +206,7 @@ def test_phase6c_checksum_failure_prevents_installation(
 
     installer = InstallationEngine(wal_manager=wal_manager)
     tx = installer.create_transaction(manifest, sample_agent, Scope.WORKSPACE)
+    assert tx.plan is not None
 
     mock_acq = MagicMock(spec=AcquisitionEngine)
     mock_acq.acquire_source.side_effect = ChecksumMismatchError(
@@ -307,6 +308,7 @@ def test_phase6c_acquisition_failure_rollback_and_staging_cleanup(
     wal_manager = TransactionWALManager(transactions_dir=wal_dir)
     installer = InstallationEngine(wal_manager=wal_manager)
     tx = installer.create_transaction(manifest, sample_agent, Scope.WORKSPACE)
+    assert tx.plan is not None
 
     mock_acq = MagicMock(spec=AcquisitionEngine)
     mock_acq.acquire_source.side_effect = GitAcquisitionError("Git clone connection timed out")
@@ -348,8 +350,12 @@ def test_phase6c_transaction_state_transitions(
     wal_manager = TransactionWALManager(transactions_dir=wal_dir)
 
     installer = InstallationEngine(wal_manager=wal_manager)
-    tx = installer.create_transaction(manifest, sample_agent, Scope.WORKSPACE)
-    assert tx.phase == TransactionPhase.PLANNED
+    tx: InstallationTransaction = installer.create_transaction(
+        manifest, sample_agent, Scope.WORKSPACE
+    )
+    initial_phase = tx.phase
+    assert initial_phase == TransactionPhase.PLANNED
+    assert tx.plan is not None
 
     target_root = tmp_path / "target"
     target_root.mkdir(parents=True, exist_ok=True)
@@ -402,6 +408,7 @@ def test_phase6c_dry_run_zero_side_effect_guarantee(
 
     installer = InstallationEngine(wal_manager=wal_manager)
     tx = installer.create_transaction(manifest, sample_agent, Scope.WORKSPACE)
+    assert tx.plan is not None
 
     for op in tx.plan.planned_operations:
         op.target_root = str(target_root)
@@ -456,6 +463,7 @@ def test_phase6c_secret_non_persistence(
     wal_manager = TransactionWALManager(transactions_dir=wal_dir)
     installer = InstallationEngine(wal_manager=wal_manager)
     tx = installer.create_transaction(manifest, sample_agent, Scope.WORKSPACE)
+    assert tx.plan is not None
 
     mock_runner = MagicMock(spec=ExternalRunner)
     mock_runner.execute.return_value = create_dummy_external_result(
@@ -520,6 +528,7 @@ def test_phase6c_existing_mcp_installation_compatibility(
 
     installer = InstallationEngine()
     tx = installer.create_transaction(manifest, sample_agent, Scope.WORKSPACE)
+    assert tx.plan is not None
 
     for op in tx.plan.planned_operations:
         op.target_root = str(target_root)
@@ -595,6 +604,7 @@ def test_phase6c_existing_plugin_installation_compatibility(
     tx = installer.create_transaction(
         plugin_manifest, sample_agent, Scope.WORKSPACE, registry=registry
     )
+    assert tx.plan is not None
 
     for op in tx.plan.planned_operations:
         op.target_root = str(target_root)
