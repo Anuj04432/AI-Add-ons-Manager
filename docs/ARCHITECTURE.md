@@ -738,5 +738,91 @@ Phase 6C completes the end-to-end integration pipeline by binding the verified s
 7. **Secret Non-Persistence**:
    All error outputs and WAL logs filter sensitive environment variables and credentials using `mask_secrets_in_text`, ensuring secrets are never persisted or printed in plain text.
 
+---
+
+## 21. Phase 6 — Health Check & Polish Architecture (`aiaddons doctor`)
+
+Phase 6 implements a comprehensive, read-only diagnostic system (`aiaddons doctor`) and health check engine (`src/aiaddons/core/health/`) designed to inspect, detect, and report inconsistencies, corruptions, runtime availability issues, and security violations across the host environment without modifying state or executing unallowlisted code.
+
+```text
+aiaddons doctor [--json] [--project-path <path>]
+       │
+       ▼
+HealthCheckEngine (Read-Only)
+       ├── check_registry()       -> Cache presence, JSON schema v1.0, freshness (<7d), secure HTTPS URL
+       ├── check_installed_state()-> state.json syntax, schema, unique records, valid IDs/versions
+       ├── check_lockfile()       -> aiaddons.lock syntax, schema, state consistency cross-checks
+       ├── check_transactions()   -> WAL logs syntax, interrupted EXECUTING transactions
+       ├── check_staging()        -> Orphaned staging directories, path name safety
+       ├── check_runtimes()       -> python (required), git, node, npm, npx, pip, uvx (optional)
+       ├── check_agents()         -> Claude Code & Codex detection, config syntax validity
+       ├── check_consistency()    -> State vs Agent configs (MCP, Skills, Plugins existence)
+       └── check_security()       -> Path traversal, dangerous env vars, runtime allowlist, secret leaks
+       │
+       ▼
+HealthReport (PASS | WARN | FAIL)
+       ├── Terminal Output: Categorized Rich format with symbols (✓/!, ✗, →) & remediation hints
+       └── JSON Output: Structured JSON payload with strict secret masking & summary counts
+```
+
+### 21.1 Strict Read-Only & Zero-Mutation Invariant
+The `aiaddons doctor` command and the underlying `HealthCheckEngine` are strictly non-mutating:
+- **NEVER** installs, updates, or removes add-ons or packages.
+- **NEVER** modifies agent configuration files (`~/.claude.json`, `~/.codex/`).
+- **NEVER** writes or alters local state databases (`~/.aiaddons/state.json`).
+- **NEVER** writes or alters workspace lockfiles (`aiaddons.lock`).
+- **NEVER** alters or creates registry cache files (`~/.aiaddons/registry/cache.json`).
+- **NEVER** creates, alters, or deletes transaction WAL logs (`~/.aiaddons/transactions/`).
+- **NEVER** deletes or alters staging directories (`~/.aiaddons/staging/`).
+- **NEVER** executes arbitrary downloaded scripts, binaries, or untrusted code.
+- **NEVER** prompts for secrets, passwords, or API keys.
+
+### 21.2 Diagnostic Categories & Checks
+
+| Category | Check ID | Diagnostic Purpose | Failure / Warning Condition |
+|----------|----------|-------------------|-----------------------------|
+| **Registry** | `registry_url_secure` | Inspects registry endpoint protocol | Insecure HTTP remote registry URL |
+| | `registry_cache_exists` | Checks local cache file presence | Cache missing (`aiaddons registry update` needed) |
+| | `registry_cache_valid` | Validates JSON structure and schema | Corrupt/malformed cache file |
+| | `registry_schema_version` | Validates supported index schema | Unsupported registry schema version != "1.0" |
+| | `registry_cache_freshness`| Checks timestamp freshness | Cache older than 7 days |
+| **Installed State** | `state_file_exists` | Checks `~/.aiaddons/state.json` | Database file missing (empty/clean state) |
+| | `state_file_valid` | Validates JSON and model schema | Corrupted `state.json` syntax |
+| | `state_records_valid` | Validates individual records | Invalid addon ID, SemVer, scope, or agent |
+| **Lockfile** | `lockfile_exists` | Checks workspace `aiaddons.lock` | Lockfile not found in current project |
+| | `lockfile_valid` | Validates YAML syntax & schema | Corrupt YAML lockfile |
+| | `lockfile_state_consistency`| Cross-checks lockfile vs workspace state | Installed add-on missing from lockfile or vice versa |
+| **Transactions** | `transactions_wal_valid` | Checks WAL log integrity | Malformed JSON in `~/.aiaddons/transactions/` |
+| | `transactions_interrupted`| Checks for uncommitted transactions | Transactions stuck in `EXECUTING` or `SOURCE_ACQUISITION` |
+| **Staging** | `staging_path_safety` | Inspects directory name boundaries | Staging folder with shell operators or path traversal |
+| | `staging_orphaned` | Checks for stale staging folders | Staging folder from completed/rolled-back transaction |
+| **Runtimes** | `runtime_python` | Validates Python interpreter (required) | Unavailable Python environment |
+| | `runtime_<tool>` | Validates `git`, `node`, `npm`, `npx`, `pip`, `uvx` | Tool missing from system `PATH` |
+| **AI Agents** | `agent_<agent_id>` | Detects Claude Code and OpenAI Codex | Agent missing or config JSON syntax error |
+| | `agents_summary` | Aggregate detection overview | Zero AI coding agents detected |
+| **Consistency** | `consistency_<id>_mcp` | Cross-checks MCP entry in agent config | Registered MCP missing in `.claude.json` / `.codex` |
+| | `consistency_<id>_skill` | Cross-checks skill directory and `SKILL.md` | Registered skill files missing on disk |
+| | `consistency_<id>_plugin`| Cross-checks plugin manifest and files | Registered plugin descriptor missing on disk |
+| **Security** | `security_paths` | Boundary validation across state files | Path traversal (`..`), null bytes (`\0`), UNC paths |
+| | `security_env_vars` | Restricted process injection checks | Dangerous env vars (`LD_PRELOAD`, `PYTHONPATH`, `PATH`) |
+| | `security_executables` | Executable allowlist enforcement | MCP command using non-allowlisted binary |
+| | `security_secrets` | Plaintext token & credential detection | Un-templated secret strings (`sk-...`, `ghp_...`) |
+
+### 21.3 Standardized CLI Exit Codes
+`aiaddons` CLI commands adopt standardized process exit codes across all subsystems:
+
+| Exit Code | Constant | Meaning |
+|-----------|----------|---------|
+| `0` | `ExitCode.SUCCESS` | All health checks passed, or command completed successfully |
+| `1` | `ExitCode.INVALID_INPUT` | Command-line arguments or syntax invalid |
+| `2` | `ExitCode.WARNINGS_DETECTED` | Diagnostic warnings detected (e.g. stale cache, missing optional runtime) |
+| `3` | `ExitCode.COMPATIBILITY_FAILURE` | Add-on compatibility resolution failed |
+| `4` | `ExitCode.SECURITY_FAILURE` | Security check violation detected (unauthorized command / dangerous env var) |
+| `5` | `ExitCode.EXECUTION_FAILURE` | Transaction execution or rollback failed |
+| `6` | `ExitCode.VERIFICATION_FAILURE` | Post-installation verification checks failed |
+| `7` | `ExitCode.HEALTH_CHECK_FAILURE` | Critical health check failure detected |
+| `8` | `ExitCode.OPERATIONAL_ERROR` | Unexpected runtime error or operational crash |
+
+
 
 
