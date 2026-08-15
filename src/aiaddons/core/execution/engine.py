@@ -236,9 +236,8 @@ class ExecutionEngine:
         for op in plan.planned_operations:
             if isinstance(op, AddSkillOperation):
                 try:
-                    if (
-                        not op.source_dir
-                        or not Path(op.source_dir).is_relative_to(staged_addon_dir)
+                    if not op.source_dir or not Path(op.source_dir).is_relative_to(
+                        staged_addon_dir
                     ):
                         op.source_dir = str(staged_addon_dir)
                 except ValueError:
