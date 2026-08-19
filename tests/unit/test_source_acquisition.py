@@ -131,6 +131,76 @@ def test_git_fetcher_dry_run(tmp_path: Path) -> None:
     assert mock_runner.execute.call_count == 0
 
 
+def test_git_fetcher_invalid_url_scheme_fails(tmp_path: Path) -> None:
+    """Verify git fetcher rejects non-git or arbitrary scheme/path URLs."""
+    fetcher = GitSourceFetcher()
+    valid_sha = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0"
+    invalid_sources = [
+        "-c",
+        "file:///etc/passwd",
+        "local/path/repo",
+        "ftp://example.com/repo.git",
+    ]
+    for bad_url in invalid_sources:
+        source = SourceSpec(
+            source_type=SourceType.GIT,
+            repository=bad_url,
+            commit_sha=valid_sha,
+        )
+        with pytest.raises(GitAcquisitionError, match="invalid repository URL"):
+            fetcher.fetch("bad-addon", source, tmp_path / "staging", dry_run=False)
+
+
+def test_git_fetcher_c_option_not_repo_url_regression(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression test: Ensure '-c' option is passed to Git without being mistaken for repo URL."""
+    captured_requests: list[list[str]] = []
+
+    def mock_popen(cmd: list[str], **kwargs: object) -> MagicMock:
+        captured_requests.append(cmd)
+        proc = MagicMock()
+        proc.returncode = 0
+        valid_sha = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0"
+        if "rev-parse" in cmd:
+            proc.communicate.return_value = (valid_sha + "\n", "")
+        else:
+            proc.communicate.return_value = ("", "")
+        return proc
+
+    monkeypatch.setattr("subprocess.Popen", mock_popen)
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/git" if "git" in name else None)
+
+    staging_dir = tmp_path / "staging_git_c_test"
+    staging_dir.mkdir()
+    (staging_dir / "file.txt").write_text("ok")
+
+    valid_sha = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0"
+    repo_url = "https://github.com/example/repo.git"
+    source = SourceSpec(
+        source_type=SourceType.GIT,
+        repository=repo_url,
+        commit_sha=valid_sha,
+    )
+
+    fetcher = GitSourceFetcher(runner=ExternalRunner())
+    res = fetcher.fetch("c-test-addon", source, staging_dir, dry_run=False)
+
+    assert res.is_staged is True
+    assert res.commit_sha == valid_sha
+    assert len(captured_requests) == 3
+
+    clone_argv = captured_requests[0]
+    # Argv order: [git, -c, core.hooksPath=/dev/null, clone,
+    #              --no-checkout, --no-recurse-submodules, repo_url, staging_dir]
+    assert clone_argv[1] == "-c"
+    assert clone_argv[2] == "core.hooksPath=/dev/null"
+    assert clone_argv[3] == "clone"
+    assert repo_url in clone_argv
+    assert clone_argv[clone_argv.index(repo_url)] == repo_url
+    assert "-c" != repo_url
+
+
 # -----------------------------------------------------------------------------
 # URL SOURCE FETCHER TESTS
 # -----------------------------------------------------------------------------

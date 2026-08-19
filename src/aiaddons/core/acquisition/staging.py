@@ -68,7 +68,17 @@ class SourceStagingManager:
             return
 
         # Robust directory cleanup with Windows read-only flag removal handler
-        def _remove_readonly(func: Any, path: str, exc_info: Any) -> None:
+        for p in resolved_staging.rglob("*"):
+            try:
+                os.chmod(p, stat.S_IWRITE)
+            except Exception:
+                pass
+        try:
+            os.chmod(resolved_staging, stat.S_IWRITE)
+        except Exception:
+            pass
+
+        def _handle_remove_readonly(func: Any, path: str, exc_info: Any) -> None:
             try:
                 os.chmod(path, stat.S_IWRITE)
                 func(path)
@@ -76,6 +86,12 @@ class SourceStagingManager:
                 pass
 
         try:
-            shutil.rmtree(resolved_staging, onerror=_remove_readonly)
+            shutil.rmtree(resolved_staging, onerror=_handle_remove_readonly)
         except Exception:
             pass
+
+        if resolved_staging.exists():
+            try:
+                shutil.rmtree(resolved_staging, ignore_errors=True)
+            except Exception:
+                pass

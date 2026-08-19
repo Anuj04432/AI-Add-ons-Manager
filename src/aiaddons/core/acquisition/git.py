@@ -42,6 +42,20 @@ class GitSourceFetcher(BaseSourceFetcher):
         repo_url = source.repository or source.url
         if not repo_url or not repo_url.strip():
             raise GitAcquisitionError(f"Git source for '{manifest_id}' requires a repository URL.")
+        repo_url = repo_url.strip()
+
+        # Validate URL scheme
+        if not (
+            repo_url.startswith("https://")
+            or repo_url.startswith("git://")
+            or repo_url.startswith("http://")
+            or repo_url.startswith("ssh://")
+            or repo_url.startswith("git@")
+        ):
+            raise GitAcquisitionError(
+                f"Security violation: Add-on '{manifest_id}' git source has "
+                f"invalid repository URL '{repo_url}'."
+            )
 
         # 2. Require immutable 40-character commit_sha
         commit_sha = source.commit_sha
