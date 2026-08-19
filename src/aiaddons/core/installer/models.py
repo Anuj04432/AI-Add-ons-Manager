@@ -60,7 +60,7 @@ class RiskLevel(StrEnum):
 
 
 class OperationType(StrEnum):
-    """Supported declarative, typed installation operation types."""
+    """Supported declarative, typed installation and removal operation types."""
 
     CREATE_DIRECTORY = "create_directory"
     COPY_FILE = "copy_file"
@@ -70,6 +70,11 @@ class OperationType(StrEnum):
     ADD_MCP_SERVER = "add_mcp_server"
     ADD_SKILL = "add_skill"
     ADD_PLUGIN_REFERENCE = "add_plugin_reference"
+    REMOVE_DIRECTORY = "remove_directory"
+    REMOVE_FILE = "remove_file"
+    REMOVE_MCP_SERVER = "remove_mcp_server"
+    REMOVE_SKILL = "remove_skill"
+    REMOVE_PLUGIN_REFERENCE = "remove_plugin_reference"
 
 
 class RollbackOperation(BaseModel):
@@ -334,6 +339,86 @@ class AddPluginReferenceOperation(BaseOperation):
         return res
 
 
+class RemoveDirectoryOperation(BaseOperation):
+    """Declarative operation to safely remove a directory."""
+
+    op_type: Literal[OperationType.REMOVE_DIRECTORY] = OperationType.REMOVE_DIRECTORY
+    directory_path: str
+
+    @field_validator("directory_path")
+    @classmethod
+    def validate_remove_dir_path(cls, v: str) -> str:
+        res = validate_safe_relative_path(v)
+        if res is None:
+            raise ValueError("directory_path cannot be empty.")
+        return res
+
+
+class RemoveFileOperation(BaseOperation):
+    """Declarative operation to safely remove a file."""
+
+    op_type: Literal[OperationType.REMOVE_FILE] = OperationType.REMOVE_FILE
+    file_path: str
+
+    @field_validator("file_path")
+    @classmethod
+    def validate_remove_file_path(cls, v: str) -> str:
+        res = validate_safe_relative_path(v)
+        if res is None:
+            raise ValueError("file_path cannot be empty.")
+        return res
+
+
+class RemoveMcpServerOperation(BaseOperation):
+    """Declarative operation to remove an MCP server config from an agent configuration."""
+
+    op_type: Literal[OperationType.REMOVE_MCP_SERVER] = OperationType.REMOVE_MCP_SERVER
+    server_name: str
+    config_path: str
+
+    @field_validator("config_path")
+    @classmethod
+    def validate_mcp_config_path(cls, v: str) -> str:
+        res = validate_safe_relative_path(v)
+        if res is None:
+            raise ValueError("config_path cannot be empty.")
+        return res
+
+
+class RemoveSkillOperation(BaseOperation):
+    """Declarative operation to remove an agent skill bundle."""
+
+    op_type: Literal[OperationType.REMOVE_SKILL] = OperationType.REMOVE_SKILL
+    skill_name: str
+    destination_dir: str
+
+    @field_validator("destination_dir")
+    @classmethod
+    def validate_skill_dest_dir(cls, v: str) -> str:
+        res = validate_safe_relative_path(v)
+        if res is None:
+            raise ValueError("destination_dir cannot be empty.")
+        return res
+
+
+class RemovePluginReferenceOperation(BaseOperation):
+    """Declarative operation to remove a composite plugin reference."""
+
+    op_type: Literal[OperationType.REMOVE_PLUGIN_REFERENCE] = (
+        OperationType.REMOVE_PLUGIN_REFERENCE
+    )
+    plugin_id: str
+    config_path: str
+
+    @field_validator("config_path")
+    @classmethod
+    def validate_plugin_config_path(cls, v: str) -> str:
+        res = validate_safe_relative_path(v)
+        if res is None:
+            raise ValueError("config_path cannot be empty.")
+        return res
+
+
 TypedOperation = (
     CreateDirectoryOperation
     | CopyFileOperation
@@ -343,6 +428,11 @@ TypedOperation = (
     | AddMcpServerOperation
     | AddSkillOperation
     | AddPluginReferenceOperation
+    | RemoveDirectoryOperation
+    | RemoveFileOperation
+    | RemoveMcpServerOperation
+    | RemoveSkillOperation
+    | RemovePluginReferenceOperation
 )
 
 
