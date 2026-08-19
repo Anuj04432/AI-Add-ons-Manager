@@ -15,6 +15,7 @@ from aiaddons.cli.commands.registry import (
     registry_update_command,
     search_command,
 )
+from aiaddons.cli.commands.remove import remove_command
 from aiaddons.cli.commands.tui import tui_command
 
 app = typer.Typer(
@@ -32,6 +33,7 @@ app.command(name="search")(search_command)
 app.command(name="info")(info_command)
 app.command(name="check")(check_command)
 app.command(name="install")(install_command)
+app.command(name="remove")(remove_command)
 app.command(name="doctor")(doctor_command)
 app.command(name="tui")(tui_command)
 
