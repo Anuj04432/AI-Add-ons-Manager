@@ -1,0 +1,26 @@
+{
+  "plugins": {
+    "ponytail": {
+      "id": "ponytail",
+      "components": [
+        "ponytail-skill",
+        "ponytail-review-skill",
+        "ponytail-audit-skill",
+        "ponytail-debt-skill",
+        "ponytail-gain-skill",
+        "ponytail-help-skill"
+      ]
+    }
+  },
+  "plugin": {
+    "id": "ponytail",
+    "components": [
+      "ponytail-skill",
+      "ponytail-review-skill",
+      "ponytail-audit-skill",
+      "ponytail-debt-skill",
+      "ponytail-gain-skill",
+      "ponytail-help-skill"
+    ]
+  }
+}
