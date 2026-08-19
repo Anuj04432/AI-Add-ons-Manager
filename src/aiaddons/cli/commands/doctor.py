@@ -16,6 +16,12 @@ from aiaddons.core.health.models import HealthCategory, HealthReport, HealthStat
 console = Console()
 
 
+def _print_json(data_str: str) -> None:
+    """Print raw JSON string directly to stdout without Rich soft-wrapping."""
+    sys.stdout.write(data_str + "\n")
+    sys.stdout.flush()
+
+
 def _get_symbols() -> tuple[str, str, str]:
     """Return platform and encoding safe status symbols."""
     try:
@@ -62,7 +68,7 @@ def doctor_command(
                 "summary": {"FAIL": 1},
                 "items": [],
             }
-            console.print(json.dumps(err_json, indent=2))
+            _print_json(json.dumps(err_json, indent=2))
         else:
             console.print(f"\n[bold red]Operational Error during health check:[/bold red] {exc}\n")
         raise typer.Exit(code=ExitCode.OPERATIONAL_ERROR) from exc
@@ -70,7 +76,7 @@ def doctor_command(
     exit_code = _get_exit_code(report.overall_status)
 
     if json_output:
-        console.print(report.model_dump_json(indent=2))
+        _print_json(report.model_dump_json(indent=2))
         raise typer.Exit(code=exit_code)
 
     # Rich formatted human-readable output

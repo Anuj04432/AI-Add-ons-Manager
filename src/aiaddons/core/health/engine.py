@@ -935,10 +935,11 @@ class HealthCheckEngine:
 
             # Verify Plugin component references
             elif record.integration_type == IntegrationType.PLUGIN:
-                base_dir = (
-                    self.workspace_dir if record.scope == Scope.WORKSPACE else Path.home()
+                plugin_file = (
+                    self.workspace_dir / ".agents" / "plugins" / record.addon_id / "plugin.json"
+                    if record.scope == Scope.WORKSPACE
+                    else Path.home() / ".aiaddons" / "plugins" / record.addon_id / "plugin.json"
                 )
-                plugin_file = base_dir / ".agents" / "plugins" / record.addon_id / "plugin.json"
                 if not plugin_file.exists():
                     msg = (
                         f"Installed plugin '{record.addon_id}' descriptor missing "

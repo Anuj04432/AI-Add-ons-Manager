@@ -196,8 +196,12 @@ def test_cli_doctor_read_only_guarantee(tmp_path: Path) -> None:
     before_mtime = dummy_file.stat().st_mtime_ns
 
     result = runner.invoke(app, ["doctor", "--project-path", str(tmp_path)])
-    # Result can be 0 or 2 depending on host environment
-    assert result.exit_code in (ExitCode.SUCCESS, ExitCode.WARNINGS_DETECTED)
+    # Result depends on host environment health status
+    assert result.exit_code in (
+        ExitCode.SUCCESS,
+        ExitCode.WARNINGS_DETECTED,
+        ExitCode.HEALTH_CHECK_FAILURE,
+    )
 
     assert dummy_file.exists()
     assert dummy_file.read_text(encoding="utf-8") == "sample content"

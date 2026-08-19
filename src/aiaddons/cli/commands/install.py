@@ -36,6 +36,9 @@ from aiaddons.core.secrets.resolver import SecretResolver
 from aiaddons.core.verification.engine import VerificationEngine
 from aiaddons.core.verification.models import VerificationStatus
 from aiaddons.registry.registry import Registry
+from aiaddons.state.lockfile import LockfileManager
+from aiaddons.state.store import InstalledStateStore
+from aiaddons.state.transaction import TransactionWALManager
 
 console = Console()
 
@@ -194,7 +197,20 @@ def install_command(
     # 5. Filter target agents
     if agent_id:
         target_aid = agent_id.strip().lower()
-        if target_aid not in detected_agents:
+        matched_agent = None
+        if target_aid in detected_agents:
+            matched_agent = detected_agents[target_aid]
+        else:
+            normalized_target = target_aid.replace(" ", "-").replace("_", "-")
+            if normalized_target in detected_agents:
+                matched_agent = detected_agents[normalized_target]
+            else:
+                for ag in detected_agents.values():
+                    if ag.agent_id.lower() == target_aid or ag.name.lower() == target_aid:
+                        matched_agent = ag
+                        break
+
+        if matched_agent is None:
             _handle_error(
                 f"Specified agent '{agent_id}' is not registered.",
                 exit_code=ExitCode.INVALID_INPUT,
@@ -204,7 +220,7 @@ def install_command(
                 scope=parsed_scope.value,
                 agent=agent_id,
             )
-        target_agent = detected_agents[target_aid]
+        target_agent = matched_agent
         if not target_agent.installed:
             _handle_error(
                 f"Specified agent '{agent_id}' is not installed on this system.",
@@ -233,8 +249,16 @@ def install_command(
                 scope=parsed_scope.value,
             )
 
-    engine = InstallationEngine(registry=registry)
-    execution_engine = ExecutionEngine()
+    wal_mgr = TransactionWALManager()
+    state_store = InstalledStateStore()
+    lockfile_mgr = LockfileManager()
+    engine = InstallationEngine(registry=registry, wal_manager=wal_mgr)
+    execution_engine = ExecutionEngine(
+        wal_manager=wal_mgr,
+        state_store=state_store,
+        lockfile_manager=lockfile_mgr,
+        registry=registry,
+    )
     compat_engine = CompatibilityEngine(registry=registry)
 
     for agent in agents_to_process:
@@ -356,7 +380,7 @@ def install_command(
             else:
                 console.print()
                 console.print(f"[bold cyan]{manifest.name}[/bold cyan]")
-                console.print("─" * max(len(manifest.name) + 2, 20))
+                console.print("-" * max(len(manifest.name) + 2, 20))
                 console.print()
                 console.print("Target:")
                 console.print(f"  [bold green]{agent.name}[/bold green]")
@@ -380,7 +404,7 @@ def install_command(
         if not json_output:
             console.print()
             console.print(f"[bold cyan]{manifest.name}[/bold cyan]")
-            console.print("─" * max(len(manifest.name) + 2, 20))
+            console.print("-" * max(len(manifest.name) + 2, 20))
             console.print()
             console.print("Target:")
             console.print(f"  [bold green]{agent.name}[/bold green]")

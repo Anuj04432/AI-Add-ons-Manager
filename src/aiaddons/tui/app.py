@@ -34,6 +34,9 @@ from aiaddons.core.models.manifest import IntegrationManifest
 from aiaddons.core.verification.engine import VerificationEngine
 from aiaddons.core.verification.models import VerificationStatus
 from aiaddons.registry.registry import Registry
+from aiaddons.state.lockfile import LockfileManager
+from aiaddons.state.store import InstalledStateStore
+from aiaddons.state.transaction import TransactionWALManager
 
 
 class AIAddonsTUIApp(App[None]):
@@ -322,8 +325,16 @@ class AIAddonsTUIApp(App[None]):
                 return
             secret_map[name] = val
 
-        inst_engine = InstallationEngine(registry=self.registry)
-        execution_engine = ExecutionEngine()
+        wal_mgr = TransactionWALManager()
+        state_store = InstalledStateStore()
+        lockfile_mgr = LockfileManager()
+        inst_engine = InstallationEngine(registry=self.registry, wal_manager=wal_mgr)
+        execution_engine = ExecutionEngine(
+            wal_manager=wal_mgr,
+            state_store=state_store,
+            lockfile_manager=lockfile_mgr,
+            registry=self.registry,
+        )
         verification_engine = VerificationEngine()
 
         try:
