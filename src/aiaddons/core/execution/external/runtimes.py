@@ -86,24 +86,13 @@ class GitRuntimeAdapter:
     """Runtime adapter for git repository operations."""
 
     def build_command_vector(self, request: ExternalExecutionRequest) -> list[str]:
-        if not request.args or len(request.args) < 2:
-            msg = "Git clone request requires repository URL and target destination path in args."
+        if not request.args:
+            msg = "Git execution request requires arguments."
             raise SecurityValidationError(msg)
 
-        repo_url = request.args[0].strip()
-        target_dir = request.args[1].strip()
-
-        # Validate URL and path
-        if not (
-            repo_url.startswith("https://")
-            or repo_url.startswith("git://")
-            or repo_url.startswith("http://")
-        ):
-            msg = f"Invalid git repository URL '{repo_url}'."
-            raise SecurityValidationError(msg)
-
-        validate_safe_relative_path(target_dir)
-        return ["git", "clone", "--depth", "1", repo_url, target_dir]
+        cmd = ["git"]
+        cmd.extend(request.args)
+        return cmd
 
 
 class PythonRuntimeAdapter:

@@ -106,14 +106,24 @@ def test_runtime_adapters_argument_construction() -> None:
     git_adapter = get_runtime_adapter(ExternalRuntime.GIT)
     git_req = ExternalExecutionRequest(
         runtime=ExternalRuntime.GIT,
-        args=["https://github.com/example/repo.git", "skills/repo"],
+        args=[
+            "-c",
+            "core.hooksPath=/dev/null",
+            "clone",
+            "--no-checkout",
+            "--no-recurse-submodules",
+            "https://github.com/example/repo.git",
+            "skills/repo",
+        ],
     )
     git_vec = git_adapter.build_command_vector(git_req)
     assert git_vec == [
         "git",
+        "-c",
+        "core.hooksPath=/dev/null",
         "clone",
-        "--depth",
-        "1",
+        "--no-checkout",
+        "--no-recurse-submodules",
         "https://github.com/example/repo.git",
         "skills/repo",
     ]

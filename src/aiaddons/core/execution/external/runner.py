@@ -75,7 +75,7 @@ class ExternalRunner:
         cmd_vector = adapter.build_command_vector(request)
 
         # 3. Validate command vector arguments against metacharacters and forbidden flags
-        validate_argument_vector(cmd_vector)
+        validate_argument_vector(cmd_vector, runtime=runtime)
 
         # 4. Resolve approved executable on PATH
         resolved_executable = self.resolve_executable(runtime)

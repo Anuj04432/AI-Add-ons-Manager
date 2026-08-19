@@ -1,4 +1,4 @@
-"""Security validation and sanitization for Phase 5B.2 external package execution."""
+from pathlib import Path
 
 from aiaddons.core.exceptions import SecurityValidationError
 from aiaddons.core.execution.external.models import ExternalRuntime
@@ -42,9 +42,22 @@ def validate_runtime_name(runtime: str | ExternalRuntime) -> ExternalRuntime:
     return ExternalRuntime(val)
 
 
-def validate_argument_vector(args: list[str]) -> list[str]:
+def validate_argument_vector(
+    args: list[str],
+    runtime: str | ExternalRuntime | None = None,
+) -> list[str]:
     """Validate argument vector elements against shell metacharacters and forbidden flags."""
     validated: list[str] = []
+    is_git = False
+    if runtime is not None:
+        val = runtime.value if isinstance(runtime, ExternalRuntime) else str(runtime)
+        is_git = val.strip().lower() == "git"
+    elif args:
+        first_token = Path(args[0]).stem.lower()
+        is_git = first_token in {"git", "git.exe"}
+
+    forbidden_flags = FORBIDDEN_ARG_FLAGS - {"-c"} if is_git else FORBIDDEN_ARG_FLAGS
+
     for idx, arg in enumerate(args):
         if not isinstance(arg, str):
             msg = f"Argument at index {idx} must be a string, got {type(arg).__name__}."
@@ -62,12 +75,12 @@ def validate_argument_vector(args: list[str]) -> list[str]:
 
         # Check dangerous inline evaluation flags
         lowered = arg.strip().lower()
-        if lowered in FORBIDDEN_ARG_FLAGS:
+        if lowered in forbidden_flags:
             msg = f"Forbidden flag '{arg}' detected in argument vector."
             raise SecurityValidationError(msg)
 
         # Check for inline command execution flag formats like --eval=... or -e ...
-        if any(lowered.startswith(f"{flag}=") for flag in FORBIDDEN_ARG_FLAGS):
+        if any(lowered.startswith(f"{flag}=") for flag in forbidden_flags):
             msg = f"Forbidden inline code execution flag '{arg}' detected."
             raise SecurityValidationError(msg)
 
