@@ -1,0 +1,32 @@
+id: ponytail-skill
+name: Ponytail Core Skill
+version: 4.9.0
+description: Core lazy senior dev mode skill enforcing YAGNI, standard library first, and minimal solutions.
+documentation_url: https://github.com/DietrichGebert/ponytail
+license: MIT
+category: productivity
+integration_type: skill
+target_agents:
+  - "*"
+supported_scopes:
+  - global
+  - workspace
+source:
+  source_type: git
+  url: https://github.com/DietrichGebert/ponytail.git
+  ref: v4.9.0
+  commit_sha: 0a4dd63ad4541f4f655c4108a295916f3c1d8fda
+dependencies: []
+trust:
+  verification_status: verified
+  publisher:
+    name: Dietrich Gebert
+    url: https://github.com/DietrichGebert
+    declared_verified: true
+tags:
+  - ponytail
+  - yagni
+  - skill
+handler_spec:
+  skill:
+    skill_file: skills/ponytail/SKILL.md

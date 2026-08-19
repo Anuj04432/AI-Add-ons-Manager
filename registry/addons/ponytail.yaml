@@ -1,0 +1,40 @@
+id: ponytail
+name: Ponytail - Lazy Senior Dev Mode
+version: 4.9.0
+description: Lazy senior dev mode. Forces the simplest, shortest solution that actually works (YAGNI, stdlib first, no unrequested abstractions).
+documentation_url: https://github.com/DietrichGebert/ponytail
+license: MIT
+category: productivity
+integration_type: plugin
+target_agents:
+  - "*"
+supported_scopes:
+  - global
+  - workspace
+source:
+  source_type: git
+  url: https://github.com/DietrichGebert/ponytail.git
+  ref: v4.9.0
+  commit_sha: 0a4dd63ad4541f4f655c4108a295916f3c1d8fda
+dependencies: []
+trust:
+  verification_status: verified
+  publisher:
+    name: Dietrich Gebert
+    url: https://github.com/DietrichGebert
+    declared_verified: true
+tags:
+  - ponytail
+  - yagni
+  - productivity
+  - plugin
+  - clean-code
+handler_spec:
+  plugin:
+    components:
+      - ponytail-skill
+      - ponytail-review-skill
+      - ponytail-audit-skill
+      - ponytail-debt-skill
+      - ponytail-gain-skill
+      - ponytail-help-skill
