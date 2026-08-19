@@ -39,6 +39,11 @@ from aiaddons.core.installer.models import (
     ModifyJsonOperation,
     ModifyYamlOperation,
     OperationType,
+    RemoveDirectoryOperation,
+    RemoveFileOperation,
+    RemoveMcpServerOperation,
+    RemovePluginReferenceOperation,
+    RemoveSkillOperation,
     TransactionPhase,
     WriteFileOperation,
 )
@@ -52,11 +57,11 @@ from aiaddons.core.verification.engine import VerificationEngine
 from aiaddons.core.verification.models import VerificationStatus
 from aiaddons.state.lockfile import LockfileAddonEntry, LockfileManager
 from aiaddons.state.store import InstalledAddonRecord, InstalledStateStore
+from aiaddons.state.transaction import TransactionWALManager
 
 if TYPE_CHECKING:
     from aiaddons.core.acquisition.engine import AcquisitionEngine
     from aiaddons.registry.registry import Registry
-    from aiaddons.state.transaction import TransactionWALManager
 
 
 class RollbackAction:
@@ -70,6 +75,7 @@ class RollbackAction:
         backup_content: str | None = None,
         existed_before: bool = False,
         json_path: str | None = None,
+        backup_files: dict[str, str] | None = None,
     ) -> None:
         self.op_type = op_type
         self.target_root = target_root
@@ -77,11 +83,22 @@ class RollbackAction:
         self.backup_content = backup_content
         self.existed_before = existed_before
         self.json_path = json_path
+        self.backup_files = backup_files or {}
 
     def rollback(self) -> None:
         """Execute the reversal step enforcing strict target-root path safety."""
         verify_safe_target_path(self.target_root, self.target_path)
-        if self.existed_before and self.backup_content is not None:
+        if self.backup_files:
+            _, dest_dir = verify_safe_target_path(self.target_root, self.target_path)
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            for rel_file, file_content in self.backup_files.items():
+                atomic_write_file_primitive(
+                    target_root=self.target_root,
+                    file_path=rel_file,
+                    content=file_content,
+                    overwrite=True,
+                )
+        elif self.existed_before and self.backup_content is not None:
             atomic_write_file_primitive(
                 target_root=self.target_root,
                 file_path=self.target_path,
@@ -89,7 +106,7 @@ class RollbackAction:
                 overwrite=True,
             )
         elif not self.existed_before:
-            if self.op_type == "directory":
+            if self.op_type in ("directory", "directory_creation"):
                 remove_directory_primitive(self.target_root, self.target_path)
             else:
                 remove_file_primitive(self.target_root, self.target_path)
@@ -109,6 +126,11 @@ class ExecutionEngine:
         OperationType.ADD_MCP_SERVER,
         OperationType.ADD_SKILL,
         OperationType.ADD_PLUGIN_REFERENCE,
+        OperationType.REMOVE_DIRECTORY,
+        OperationType.REMOVE_FILE,
+        OperationType.REMOVE_MCP_SERVER,
+        OperationType.REMOVE_SKILL,
+        OperationType.REMOVE_PLUGIN_REFERENCE,
     }
 
     def __init__(
@@ -120,13 +142,15 @@ class ExecutionEngine:
         verification_engine: VerificationEngine | None = None,
         acquisition_engine: AcquisitionEngine | None = None,
         registry: Registry | None = None,
+        workspace_dir: Path | None = None,
     ) -> None:
         self.external_runner = external_runner or ExternalRunner()
-        self.wal_manager = wal_manager
-        self.state_store = state_store
-        self.lockfile_manager = lockfile_manager
+        self.wal_manager = wal_manager or TransactionWALManager()
+        self.state_store = state_store or InstalledStateStore()
+        self.lockfile_manager = lockfile_manager or LockfileManager()
         self.verification_engine = verification_engine or VerificationEngine()
         self.registry = registry
+        self.workspace_dir = (workspace_dir or Path.cwd()).resolve()
         from aiaddons.core.acquisition.engine import AcquisitionEngine
 
         self.acquisition_engine = acquisition_engine or AcquisitionEngine(
@@ -140,9 +164,13 @@ class ExecutionEngine:
         dry_run: bool = False,
         secret_values: dict[str, str] | None = None,
         registry: Registry | None = None,
+        is_removal: bool = False,
     ) -> ExecutionResult:
         """Execute operations in an installation plan with safety validation and rollback."""
         plan.validate_safety()
+        if transaction is not None:
+            transaction.is_dry_run = dry_run
+        is_dry = dry_run
         secrets_list = list(secret_values.values()) if secret_values else []
 
         unsupported_ops = [
@@ -154,7 +182,7 @@ class ExecutionEngine:
             if transaction:
                 transaction.phase = TransactionPhase.FAILED
                 transaction.error_message = mask_secrets_in_text(err_msg, secrets_list)
-                if self.wal_manager:
+                if self.wal_manager and not is_dry:
                     self.wal_manager.write_transaction(transaction)
 
             return ExecutionResult(
@@ -165,64 +193,47 @@ class ExecutionEngine:
                 error_message=mask_secrets_in_text(err_msg, secrets_list),
             )
 
-        # Execute Source Acquisition Phase
-        if transaction:
-            transaction.phase = TransactionPhase.SOURCE_ACQUISITION
-            if self.wal_manager:
-                self.wal_manager.write_transaction(transaction)
+        is_removal_plan = is_removal or any(
+            op.op_type
+            in {
+                OperationType.REMOVE_DIRECTORY,
+                OperationType.REMOVE_FILE,
+                OperationType.REMOVE_MCP_SERVER,
+                OperationType.REMOVE_SKILL,
+                OperationType.REMOVE_PLUGIN_REFERENCE,
+            }
+            for op in plan.planned_operations
+        )
 
+        acquired_result: AcquiredSourceResult | None = None
         tx_id = transaction.transaction_id if transaction else f"tx_anon_{plan.addon_id}"
-        try:
-            acquired_result = self.acquisition_engine.acquire_source(
-                manifest_id=plan.addon_id,
-                source=plan.source,
-                transaction_id=tx_id,
-                dry_run=dry_run,
-            )
-        except Exception as exc:
-            err_msg = mask_secrets_in_text(f"Source acquisition failed: {exc}", secrets_list)
+
+        if not is_removal_plan:
+            # Execute Source Acquisition Phase for installations
             if transaction:
-                transaction.phase = TransactionPhase.FAILED
-                transaction.error_message = err_msg
-                if self.wal_manager:
-                    self.wal_manager.write_transaction(transaction)
-                transaction.phase = TransactionPhase.ROLLED_BACK
-                if self.wal_manager:
+                transaction.phase = TransactionPhase.SOURCE_ACQUISITION
+                if self.wal_manager and not is_dry:
                     self.wal_manager.write_transaction(transaction)
 
-            if not dry_run:
-                self.acquisition_engine.cleanup_staging(tx_id)
-
-            return ExecutionResult(
-                addon_id=plan.addon_id,
-                target_agent=plan.target_agent,
-                scope=plan.target_scope,
-                status=ExecutionStatus.FAILED,
-                error_message=err_msg,
-            )
-
-        # Bind staged source directory to plan operations
-        staged_addon_dir = acquired_result.staging_path
-        if plan.source and plan.source.path and plan.source.path not in (".", ""):
             try:
-                clean_rel = validate_safe_relative_path(plan.source.path)
-                if clean_rel:
-                    candidate_sub = acquired_result.staging_path / clean_rel
-                    if candidate_sub.exists():
-                        staged_addon_dir = candidate_sub
-            except ValueError as err:
-                err_msg = mask_secrets_in_text(
-                    f"Security violation in source path '{plan.source.path}': {err}", secrets_list
+                acquired_result = self.acquisition_engine.acquire_source(
+                    manifest_id=plan.addon_id,
+                    source=plan.source,
+                    transaction_id=tx_id,
+                    dry_run=is_dry,
                 )
+            except Exception as exc:
+                err_msg = mask_secrets_in_text(f"Source acquisition failed: {exc}", secrets_list)
                 if transaction:
                     transaction.phase = TransactionPhase.FAILED
                     transaction.error_message = err_msg
-                    if self.wal_manager:
+                    if self.wal_manager and not is_dry:
                         self.wal_manager.write_transaction(transaction)
                     transaction.phase = TransactionPhase.ROLLED_BACK
-                    if self.wal_manager:
+                    if self.wal_manager and not is_dry:
                         self.wal_manager.write_transaction(transaction)
-                if not dry_run:
+
+                if not is_dry:
                     self.acquisition_engine.cleanup_staging(tx_id)
 
                 return ExecutionResult(
@@ -233,25 +244,58 @@ class ExecutionEngine:
                     error_message=err_msg,
                 )
 
-        for op in plan.planned_operations:
-            if isinstance(op, AddSkillOperation):
+            # Bind staged source directory to plan operations
+            staged_addon_dir = acquired_result.staging_path
+            if plan.source and plan.source.path and plan.source.path not in (".", ""):
                 try:
-                    if not op.source_dir or not Path(op.source_dir).is_relative_to(
-                        staged_addon_dir
-                    ):
+                    clean_rel = validate_safe_relative_path(plan.source.path)
+                    if clean_rel:
+                        candidate_sub = acquired_result.staging_path / clean_rel
+                        if candidate_sub.exists():
+                            staged_addon_dir = candidate_sub
+                except ValueError as err:
+                    err_msg = mask_secrets_in_text(
+                        f"Security violation in source path '{plan.source.path}': {err}",
+                        secrets_list,
+                    )
+                    if transaction:
+                        transaction.phase = TransactionPhase.FAILED
+                        transaction.error_message = err_msg
+                        if self.wal_manager and not is_dry:
+                            self.wal_manager.write_transaction(transaction)
+                        transaction.phase = TransactionPhase.ROLLED_BACK
+                        if self.wal_manager and not is_dry:
+                            self.wal_manager.write_transaction(transaction)
+                    if not is_dry:
+                        self.acquisition_engine.cleanup_staging(tx_id)
+
+                    return ExecutionResult(
+                        addon_id=plan.addon_id,
+                        target_agent=plan.target_agent,
+                        scope=plan.target_scope,
+                        status=ExecutionStatus.FAILED,
+                        error_message=err_msg,
+                    )
+
+            for op in plan.planned_operations:
+                if isinstance(op, AddSkillOperation):
+                    try:
+                        if not op.source_dir or not Path(op.source_dir).is_relative_to(
+                            staged_addon_dir
+                        ):
+                            op.source_dir = str(staged_addon_dir)
+                    except ValueError:
                         op.source_dir = str(staged_addon_dir)
-                except ValueError:
-                    op.source_dir = str(staged_addon_dir)
-            elif isinstance(op, CopyFileOperation):
-                try:
-                    if not Path(op.source_path).is_relative_to(staged_addon_dir):
+                elif isinstance(op, CopyFileOperation):
+                    try:
+                        if not Path(op.source_path).is_relative_to(staged_addon_dir):
+                            op.source_path = str(staged_addon_dir / op.source_path)
+                    except ValueError:
                         op.source_path = str(staged_addon_dir / op.source_path)
-                except ValueError:
-                    op.source_path = str(staged_addon_dir / op.source_path)
 
         if transaction:
             transaction.phase = TransactionPhase.EXECUTING
-            if self.wal_manager:
+            if self.wal_manager and not is_dry:
                 self.wal_manager.write_transaction(transaction)
 
         executed_results: list[OperationExecutionResult] = []
@@ -262,7 +306,7 @@ class ExecutionEngine:
             try:
                 rollback_action = self._dispatch_operation(
                     op,
-                    dry_run=dry_run,
+                    dry_run=is_dry,
                     secret_values=secret_values,
                     acquired_result=acquired_result,
                 )
@@ -294,17 +338,17 @@ class ExecutionEngine:
                 if transaction:
                     transaction.phase = TransactionPhase.FAILED
                     transaction.error_message = err_msg
-                    if self.wal_manager:
+                    if self.wal_manager and not is_dry:
                         self.wal_manager.write_transaction(transaction)
 
                 rolled_back_results = self._rollback_executed_stack(rollback_stack)
 
                 if transaction:
                     transaction.phase = TransactionPhase.ROLLED_BACK
-                    if self.wal_manager:
+                    if self.wal_manager and not is_dry:
                         self.wal_manager.write_transaction(transaction)
 
-                if not dry_run:
+                if not is_dry:
                     self.acquisition_engine.cleanup_staging(tx_id)
 
                 return ExecutionResult(
@@ -319,7 +363,7 @@ class ExecutionEngine:
 
         verification_res = self.verification_engine.verify_plan(
             plan=plan,
-            dry_run=dry_run,
+            dry_run=is_dry,
             secret_values=secret_values,
         )
 
@@ -333,7 +377,7 @@ class ExecutionEngine:
             if transaction:
                 transaction.phase = TransactionPhase.FAILED
                 transaction.error_message = err_msg
-                if self.wal_manager:
+                if self.wal_manager and not is_dry:
                     self.wal_manager.write_transaction(transaction)
 
             rolled_back_results = self._rollback_executed_stack(rollback_stack)
@@ -341,10 +385,10 @@ class ExecutionEngine:
 
             if transaction:
                 transaction.phase = TransactionPhase.ROLLED_BACK
-                if self.wal_manager:
+                if self.wal_manager and not is_dry:
                     self.wal_manager.write_transaction(transaction)
 
-            if not dry_run:
+            if not is_dry and not is_removal_plan:
                 self.acquisition_engine.cleanup_staging(tx_id)
 
             return ExecutionResult(
@@ -359,54 +403,68 @@ class ExecutionEngine:
 
         if transaction:
             transaction.phase = TransactionPhase.VERIFIED
-            if self.wal_manager:
+            if self.wal_manager and not is_dry:
                 self.wal_manager.write_transaction(transaction)
 
         # Atomic installed state and lockfile persistence upon commit
-        if not dry_run:
+        if not is_dry:
             try:
-                now_str = datetime.now(UTC).isoformat()
-                installed_files = [r.target_path for r in executed_results if r.target_path]
-                if self.state_store:
-                    record = InstalledAddonRecord(
-                        addon_id=plan.addon_id,
-                        name=plan.addon_name,
-                        version=plan.addon_version,
-                        target_agent=plan.target_agent,
-                        scope=plan.target_scope,
-                        integration_type=plan.integration_type,
-                        installed_at=now_str,
-                        installed_files=installed_files,
-                    )
-                    self.state_store.record_installation(record)
+                if is_removal_plan:
+                    if self.state_store:
+                        self.state_store.remove_installation(
+                            target_agent=plan.target_agent,
+                            scope=plan.target_scope,
+                            addon_id=plan.addon_id,
+                        )
+                    if self.lockfile_manager and plan.target_scope == Scope.WORKSPACE:
+                        self.lockfile_manager.remove_from_lockfile(
+                            self.workspace_dir,
+                            target_agent=plan.target_agent,
+                            addon_id=plan.addon_id,
+                        )
+                else:
+                    now_str = datetime.now(UTC).isoformat()
+                    installed_files = [r.target_path for r in executed_results if r.target_path]
+                    if self.state_store:
+                        record = InstalledAddonRecord(
+                            addon_id=plan.addon_id,
+                            name=plan.addon_name,
+                            version=plan.addon_version,
+                            target_agent=plan.target_agent,
+                            scope=plan.target_scope,
+                            integration_type=plan.integration_type,
+                            installed_at=now_str,
+                            installed_files=installed_files,
+                        )
+                        self.state_store.record_installation(record)
 
-                if self.lockfile_manager and plan.target_scope == Scope.WORKSPACE:
-                    entry = LockfileAddonEntry(
-                        addon_id=plan.addon_id,
-                        name=plan.addon_name,
-                        version=plan.addon_version,
-                        integration_type=plan.integration_type,
-                        target_agent=plan.target_agent,
-                        checksum=plan.source.checksum,
-                        installed_at=now_str,
-                    )
-                    self.lockfile_manager.update_lockfile(Path.cwd(), entry)
+                    if self.lockfile_manager and plan.target_scope == Scope.WORKSPACE:
+                        entry = LockfileAddonEntry(
+                            addon_id=plan.addon_id,
+                            name=plan.addon_name,
+                            version=plan.addon_version,
+                            integration_type=plan.integration_type,
+                            target_agent=plan.target_agent,
+                            checksum=plan.source.checksum if plan.source else None,
+                            installed_at=now_str,
+                        )
+                        self.lockfile_manager.update_lockfile(self.workspace_dir, entry)
             except Exception as exc:
                 err_msg = f"State persistence error: {exc}"
                 if transaction:
                     transaction.phase = TransactionPhase.FAILED
                     transaction.error_message = err_msg
-                    if self.wal_manager:
+                    if self.wal_manager and not is_dry:
                         self.wal_manager.write_transaction(transaction)
 
                 rolled_back_results = self._rollback_executed_stack(rollback_stack)
 
                 if transaction:
                     transaction.phase = TransactionPhase.ROLLED_BACK
-                    if self.wal_manager:
+                    if self.wal_manager and not is_dry:
                         self.wal_manager.write_transaction(transaction)
 
-                if not dry_run:
+                if not is_dry and not is_removal_plan:
                     self.acquisition_engine.cleanup_staging(tx_id)
 
                 return ExecutionResult(
@@ -420,12 +478,13 @@ class ExecutionEngine:
                 )
 
         if transaction:
-            transaction.phase = TransactionPhase.COMMITTED
-            if self.wal_manager:
-                self.wal_manager.write_transaction(transaction)
-            if not dry_run:
-                self.acquisition_engine.cleanup_staging(transaction.transaction_id)
-        elif not dry_run:
+            if not is_dry:
+                transaction.phase = TransactionPhase.COMMITTED
+                if self.wal_manager:
+                    self.wal_manager.write_transaction(transaction)
+                if not is_removal_plan:
+                    self.acquisition_engine.cleanup_staging(transaction.transaction_id)
+        elif not is_dry and not is_removal_plan:
             self.acquisition_engine.cleanup_staging(tx_id)
 
         return ExecutionResult(
@@ -776,6 +835,122 @@ class ExecutionEngine:
                 existed_before=existed,
             )
 
+        elif isinstance(op, RemoveMcpServerOperation):
+            _, dest = verify_safe_target_path(op.target_root, op.config_path)
+            existed = dest.exists()
+            backup = dest.read_text(encoding="utf-8") if (existed and dest.is_file()) else None
+
+            json_key = f"mcpServers.{op.server_name}"
+            rollback_action = RollbackAction(
+                op_type="json",
+                target_root=op.target_root,
+                target_path=op.config_path,
+                backup_content=backup,
+                existed_before=existed,
+            )
+
+            if existed:
+                remove_json_key_primitive(op.target_root, op.config_path, json_key)
+
+            return rollback_action
+
+        elif isinstance(op, RemoveSkillOperation):
+            _, dest_dir = verify_safe_target_path(op.target_root, op.destination_dir)
+            existed = dest_dir.exists() and dest_dir.is_dir()
+            backup_files: dict[str, str] = {}
+            if existed:
+                target_root_p = Path(op.target_root).expanduser().resolve()
+                for file_p in dest_dir.rglob("*"):
+                    if file_p.is_file():
+                        try:
+                            rel_f = str(file_p.relative_to(target_root_p)).replace("\\", "/")
+                        except Exception:
+                            rel_f = f"{op.destination_dir}/{file_p.name}"
+                        try:
+                            backup_files[rel_f] = file_p.read_text(encoding="utf-8")
+                        except Exception:
+                            pass
+
+            rollback_action = RollbackAction(
+                op_type="directory",
+                target_root=op.target_root,
+                target_path=op.destination_dir,
+                existed_before=existed,
+                backup_files=backup_files,
+            )
+
+            if existed:
+                remove_directory_primitive(op.target_root, op.destination_dir)
+
+            return rollback_action
+
+        elif isinstance(op, RemovePluginReferenceOperation):
+            _, dest = verify_safe_target_path(op.target_root, op.config_path)
+            existed = dest.exists()
+            backup = dest.read_text(encoding="utf-8") if (existed and dest.is_file()) else None
+
+            json_key = f"plugins.{op.plugin_id}"
+            rollback_action = RollbackAction(
+                op_type="json",
+                target_root=op.target_root,
+                target_path=op.config_path,
+                backup_content=backup,
+                existed_before=existed,
+            )
+
+            if existed:
+                remove_json_key_primitive(op.target_root, op.config_path, json_key)
+
+            return rollback_action
+
+        elif isinstance(op, RemoveDirectoryOperation):
+            _, dest_dir = verify_safe_target_path(op.target_root, op.directory_path)
+            existed = dest_dir.exists() and dest_dir.is_dir()
+            backup_files = {}
+            if existed:
+                target_root_p = Path(op.target_root).expanduser().resolve()
+                for file_p in dest_dir.rglob("*"):
+                    if file_p.is_file():
+                        try:
+                            rel_f = str(file_p.relative_to(target_root_p)).replace("\\", "/")
+                        except Exception:
+                            rel_f = f"{op.directory_path}/{file_p.name}"
+                        try:
+                            backup_files[rel_f] = file_p.read_text(encoding="utf-8")
+                        except Exception:
+                            pass
+
+            rollback_action = RollbackAction(
+                op_type="directory",
+                target_root=op.target_root,
+                target_path=op.directory_path,
+                existed_before=existed,
+                backup_files=backup_files,
+            )
+
+            if existed:
+                remove_directory_primitive(op.target_root, op.directory_path)
+
+            return rollback_action
+
+        elif isinstance(op, RemoveFileOperation):
+            _, dest_file = verify_safe_target_path(op.target_root, op.file_path)
+            existed = dest_file.exists() and dest_file.is_file()
+            backup = dest_file.read_text(encoding="utf-8") if existed else None
+
+            rollback_action = RollbackAction(
+                op_type="file",
+                target_root=op.target_root,
+                target_path=op.file_path,
+                backup_content=backup,
+                existed_before=existed,
+            )
+
+            if existed:
+                remove_file_primitive(op.target_root, op.file_path)
+
+            return rollback_action
+
         else:
             raise SecurityValidationError(f"Unsupported operation model '{op.op_type}'.")
 
@@ -819,6 +994,8 @@ class ExecutionEngine:
             if result.status != ExecutionStatus.SUCCESS:
                 continue
             if not result.target_path:
+                continue
+            if result.op_type.startswith("remove_"):
                 continue
             try:
                 _, resolved_dest = verify_safe_target_path(result.target_root, result.target_path)
