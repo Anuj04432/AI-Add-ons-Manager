@@ -25,6 +25,7 @@ from aiaddons.state.transaction import TransactionWALManager
 if TYPE_CHECKING:
     from aiaddons.integrations.base import BaseIntegrationInstaller
     from aiaddons.registry.registry import Registry
+    from aiaddons.state.store import InstalledAddonRecord
 
 
 class InstallationEngine:
@@ -198,6 +199,227 @@ class InstallationEngine:
                 agent=agent,
                 requested_scope=scope,
                 compatibility_result=compat,
+                plan=None,
+                is_dry_run=True,
+                error_message=str(exc),
+            )
+
+        if self._wal_manager:
+            self._wal_manager.write_transaction(tx)
+        return tx
+
+    def generate_removal_plan(
+        self,
+        manifest: IntegrationManifest,
+        agent: AgentDetectionResult,
+        scope: Scope = Scope.WORKSPACE,
+        registry: Registry | None = None,
+        force: bool = False,
+        active_installed_plugins: list[InstalledAddonRecord] | None = None,
+    ) -> InstallationPlan:
+        """Generate an inverse operation plan for safely removing an installed add-on."""
+        from aiaddons.core.installer.models import (
+            BaseOperation,
+            RemoveDirectoryOperation,
+            RemoveMcpServerOperation,
+            RemovePluginReferenceOperation,
+            RemoveSkillOperation,
+            RiskLevel,
+            RollbackMetadata,
+            RollbackOperation,
+        )
+        from aiaddons.integrations.mcp import make_relative_config_path
+        from aiaddons.integrations.skill import get_skill_target_directory
+
+        target_root = "~" if scope == Scope.GLOBAL else "."
+        planned_operations: list[BaseOperation] = []
+        warnings: list[str] = []
+        rollback_operations: list[RollbackOperation] = []
+
+        if manifest.integration_type == IntegrationType.MCP:
+            raw_config_path = agent.get_config_path_for_scope(scope)
+            if not raw_config_path:
+                raw_config_path = f".{agent.agent_id}.json"
+            config_path = make_relative_config_path(raw_config_path, scope)
+
+            mcp_op = RemoveMcpServerOperation(
+                description=f"Remove MCP server '{manifest.id}' from '{config_path}'",
+                target_root=target_root,
+                server_name=manifest.id,
+                config_path=config_path,
+                target_path=config_path,
+                reversible=True,
+            )
+            planned_operations.append(mcp_op)
+            rollback_operations.append(
+                RollbackOperation(
+                    op_type="modify_json",
+                    description=f"Restore MCP server '{manifest.id}' in '{config_path}'",
+                    target_root=target_root,
+                    target_path=config_path,
+                    params={"json_path": f"mcpServers.{manifest.id}"},
+                )
+            )
+
+        elif manifest.integration_type == IntegrationType.SKILL:
+            base_dir = get_skill_target_directory(agent.agent_id, scope)
+            dest_dir = f"{base_dir}/{manifest.id}"
+
+            skill_op = RemoveSkillOperation(
+                description=f"Remove deployed skill '{manifest.name}' from '{dest_dir}'",
+                target_root=target_root,
+                skill_name=manifest.name,
+                destination_dir=dest_dir,
+                target_path=dest_dir,
+                reversible=True,
+            )
+            dir_op = RemoveDirectoryOperation(
+                description=f"Remove skill directory '{dest_dir}'",
+                target_root=target_root,
+                directory_path=dest_dir,
+                target_path=dest_dir,
+                reversible=True,
+            )
+            planned_operations.extend([skill_op, dir_op])
+            rollback_operations.append(
+                RollbackOperation(
+                    op_type="create_directory",
+                    description=f"Restore skill directory '{dest_dir}'",
+                    target_root=target_root,
+                    target_path=dest_dir,
+                    params={"directory_path": dest_dir},
+                )
+            )
+
+        elif manifest.integration_type == IntegrationType.PLUGIN:
+            dest_dir = (
+                f".aiaddons/plugins/{manifest.id}"
+                if scope == Scope.GLOBAL
+                else f".agents/plugins/{manifest.id}"
+            )
+            active_reg = registry or self._registry
+            if manifest.handler_spec.plugin and manifest.handler_spec.plugin.components:
+                # Check shared components across other active installed plugins
+                other_plugin_components: set[str] = set()
+                if active_installed_plugins and active_reg:
+                    for installed_plugin in active_installed_plugins:
+                        if installed_plugin.addon_id != manifest.id:
+                            other_manifest = active_reg.get(installed_plugin.addon_id)
+                            if other_manifest and other_manifest.handler_spec.plugin:
+                                other_plugin_components.update(
+                                    other_manifest.handler_spec.plugin.components
+                                )
+
+                for comp_id in manifest.handler_spec.plugin.components:
+                    if comp_id in other_plugin_components and not force:
+                        warnings.append(
+                            f"Component '{comp_id}' is shared by another active plugin "
+                            "and will not be removed (use --force to remove anyway)."
+                        )
+                        continue
+
+                    comp_m = active_reg.get(comp_id) if active_reg else None
+                    if comp_m:
+                        comp_plan = self.generate_removal_plan(
+                            manifest=comp_m,
+                            agent=agent,
+                            scope=scope,
+                            registry=active_reg,
+                            force=force,
+                            active_installed_plugins=active_installed_plugins,
+                        )
+                        planned_operations.extend(comp_plan.planned_operations)
+                        warnings.extend(comp_plan.warnings)
+
+            plugin_ref_op = RemovePluginReferenceOperation(
+                description=f"Remove plugin reference '{manifest.id}'",
+                target_root=target_root,
+                plugin_id=manifest.id,
+                config_path=f"{dest_dir}/plugin.json",
+                target_path=dest_dir,
+                reversible=True,
+            )
+            dir_op = RemoveDirectoryOperation(
+                description=f"Remove plugin directory '{dest_dir}'",
+                target_root=target_root,
+                directory_path=dest_dir,
+                target_path=dest_dir,
+                reversible=True,
+            )
+            planned_operations.extend([plugin_ref_op, dir_op])
+            rollback_operations.append(
+                RollbackOperation(
+                    op_type="create_directory",
+                    description=f"Restore plugin directory '{dest_dir}'",
+                    target_root=target_root,
+                    target_path=dest_dir,
+                    params={"directory_path": dest_dir},
+                )
+            )
+
+        rollback_info = RollbackMetadata(
+            reversible=True,
+            rollback_operations=rollback_operations,
+            instructions=f"Rollback removal of '{manifest.id}'.",
+        )
+
+        plan = InstallationPlan(
+            addon_id=manifest.id,
+            addon_name=manifest.name,
+            addon_version=manifest.version,
+            target_agent=agent.agent_id,
+            target_agent_name=agent.name,
+            target_scope=scope,
+            integration_type=manifest.integration_type,
+            source=manifest.source,
+            planned_operations=planned_operations,
+            warnings=warnings,
+            risk_level=RiskLevel.LOW,
+            reversible=True,
+            rollback_info=rollback_info,
+        )
+        plan.validate_safety()
+        return plan
+
+    def create_removal_transaction(
+        self,
+        manifest: IntegrationManifest,
+        agent: AgentDetectionResult,
+        scope: Scope = Scope.WORKSPACE,
+        registry: Registry | None = None,
+        force: bool = False,
+        active_installed_plugins: list[InstalledAddonRecord] | None = None,
+    ) -> InstallationTransaction:
+        """Create and initialize a dry-run removal transaction."""
+        tx_id = f"tx_rem_{uuid.uuid4().hex[:12]}"
+        tx: InstallationTransaction
+        try:
+            plan = self.generate_removal_plan(
+                manifest=manifest,
+                agent=agent,
+                scope=scope,
+                registry=registry,
+                force=force,
+                active_installed_plugins=active_installed_plugins,
+            )
+            tx = InstallationTransaction(
+                transaction_id=tx_id,
+                phase=TransactionPhase.PLANNED,
+                manifest=manifest,
+                agent=agent,
+                requested_scope=scope,
+                compatibility_result=None,
+                plan=plan,
+                is_dry_run=True,
+            )
+        except Exception as exc:
+            tx = InstallationTransaction(
+                transaction_id=tx_id,
+                phase=TransactionPhase.FAILED,
+                manifest=manifest,
+                agent=agent,
+                requested_scope=scope,
+                compatibility_result=None,
                 plan=None,
                 is_dry_run=True,
                 error_message=str(exc),
