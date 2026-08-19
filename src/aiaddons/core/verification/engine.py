@@ -26,6 +26,11 @@ from aiaddons.core.installer.models import (
     InstallationPlan,
     ModifyJsonOperation,
     ModifyYamlOperation,
+    RemoveDirectoryOperation,
+    RemoveFileOperation,
+    RemoveMcpServerOperation,
+    RemovePluginReferenceOperation,
+    RemoveSkillOperation,
     WriteFileOperation,
 )
 from aiaddons.core.verification.models import (
@@ -575,6 +580,156 @@ class VerificationEngine:
                 status=VerificationStatus.PASSED,
                 expected_value=f"Plugin '{op.plugin_id}' reference valid",
                 actual_value="Plugin reference verified",
+            )
+
+        if isinstance(op, RemoveDirectoryOperation):
+            _, dest = verify_path_security(op.target_root, op.directory_path)
+            if not dest.exists():
+                return VerificationCheck(
+                    check_id=check_id,
+                    description=desc,
+                    status=VerificationStatus.PASSED,
+                    expected_value=f"Directory '{op.directory_path}' removed",
+                    actual_value="Directory does not exist",
+                )
+            return VerificationCheck(
+                check_id=check_id,
+                description=desc,
+                status=VerificationStatus.FAILED,
+                expected_value=f"Directory '{op.directory_path}' removed",
+                actual_value="Directory still exists",
+                error_info=f"Directory '{op.directory_path}' was not removed.",
+            )
+
+        if isinstance(op, RemoveFileOperation):
+            _, dest = verify_path_security(op.target_root, op.file_path)
+            if not dest.exists():
+                return VerificationCheck(
+                    check_id=check_id,
+                    description=desc,
+                    status=VerificationStatus.PASSED,
+                    expected_value=f"File '{op.file_path}' removed",
+                    actual_value="File does not exist",
+                )
+            return VerificationCheck(
+                check_id=check_id,
+                description=desc,
+                status=VerificationStatus.FAILED,
+                expected_value=f"File '{op.file_path}' removed",
+                actual_value="File still exists",
+                error_info=f"File '{op.file_path}' was not removed.",
+            )
+
+        if isinstance(op, RemoveMcpServerOperation):
+            _, dest = verify_path_security(op.target_root, op.config_path)
+            if not dest.exists():
+                return VerificationCheck(
+                    check_id=check_id,
+                    description=desc,
+                    status=VerificationStatus.PASSED,
+                    expected_value=f"mcpServers.{op.server_name} removed",
+                    actual_value="Config file does not exist",
+                )
+            try:
+                content = dest.read_text(encoding="utf-8")
+                data = json.loads(content) if content.strip() else {}
+            except Exception as err:
+                return VerificationCheck(
+                    check_id=check_id,
+                    description=desc,
+                    status=VerificationStatus.FAILED,
+                    expected_value="Valid JSON configuration",
+                    actual_value="Malformed JSON",
+                    error_info=f"Failed to parse config file '{op.config_path}': {err}",
+                )
+            mcp_servers = data.get("mcpServers", {})
+            if isinstance(mcp_servers, dict) and op.server_name in mcp_servers:
+                return VerificationCheck(
+                    check_id=check_id,
+                    description=desc,
+                    status=VerificationStatus.FAILED,
+                    expected_value=f"mcpServers.{op.server_name} removed",
+                    actual_value="Server entry still present",
+                    error_info=(
+                        f"MCP server '{op.server_name}' still present in '{op.config_path}'."
+                    ),
+                )
+            return VerificationCheck(
+                check_id=check_id,
+                description=desc,
+                status=VerificationStatus.PASSED,
+                expected_value=f"mcpServers.{op.server_name} removed",
+                actual_value="Server entry removed",
+            )
+
+        if isinstance(op, RemoveSkillOperation):
+            _, dest_dir = verify_path_security(op.target_root, op.destination_dir)
+            if not dest_dir.exists():
+                return VerificationCheck(
+                    check_id=check_id,
+                    description=desc,
+                    status=VerificationStatus.PASSED,
+                    expected_value=f"Skill '{op.skill_name}' directory removed",
+                    actual_value="Directory does not exist",
+                )
+            return VerificationCheck(
+                check_id=check_id,
+                description=desc,
+                status=VerificationStatus.FAILED,
+                expected_value=f"Skill '{op.skill_name}' directory removed",
+                actual_value="Skill directory still exists",
+                error_info=f"Skill directory '{op.destination_dir}' was not removed.",
+            )
+
+        if isinstance(op, RemovePluginReferenceOperation):
+            _, dest = verify_path_security(op.target_root, op.config_path)
+            if not dest.exists():
+                return VerificationCheck(
+                    check_id=check_id,
+                    description=desc,
+                    status=VerificationStatus.PASSED,
+                    expected_value=f"Plugin '{op.plugin_id}' removed",
+                    actual_value="Config file does not exist",
+                )
+            try:
+                content = dest.read_text(encoding="utf-8")
+                data = json.loads(content) if content.strip() else {}
+            except Exception as err:
+                return VerificationCheck(
+                    check_id=check_id,
+                    description=desc,
+                    status=VerificationStatus.FAILED,
+                    expected_value="Valid JSON configuration",
+                    actual_value="Malformed JSON",
+                    error_info=f"Failed to parse plugin config file '{op.config_path}': {err}",
+                )
+            plugins_dict = data.get("plugins", {})
+            if isinstance(plugins_dict, dict) and op.plugin_id in plugins_dict:
+                return VerificationCheck(
+                    check_id=check_id,
+                    description=desc,
+                    status=VerificationStatus.FAILED,
+                    expected_value=f"Plugin '{op.plugin_id}' removed",
+                    actual_value="Plugin entry still present",
+                    error_info=f"Plugin '{op.plugin_id}' still present in '{op.config_path}'.",
+                )
+            if "id" in data and data["id"] == op.plugin_id:
+                return VerificationCheck(
+                    check_id=check_id,
+                    description=desc,
+                    status=VerificationStatus.FAILED,
+                    expected_value=f"Plugin '{op.plugin_id}' removed",
+                    actual_value="Plugin descriptor still present",
+                    error_info=(
+                        f"Plugin descriptor '{op.plugin_id}' still present in '{op.config_path}'."
+                    ),
+                )
+            return VerificationCheck(
+                check_id=check_id,
+                description=desc,
+                status=VerificationStatus.PASSED,
+                expected_value=f"Plugin '{op.plugin_id}' removed",
+                actual_value="Plugin reference removed",
             )
 
         raise VerificationError(f"Unsupported operation type '{op.op_type}'.")
