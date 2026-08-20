@@ -7,7 +7,7 @@ addons:
     integration_type: mcp
     target_agent: claude-code
     checksum: sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
-    installed_at: '2026-08-19T11:38:28.193672+00:00'
+    installed_at: '2026-08-20T12:50:23.774776+00:00'
   claude-code:github-mcp:
     addon_id: github-mcp
     name: GitHub MCP Server
@@ -15,7 +15,7 @@ addons:
     integration_type: mcp
     target_agent: claude-code
     checksum: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-    installed_at: '2026-08-19T11:38:36.342947+00:00'
+    installed_at: '2026-08-20T12:50:41.671407+00:00'
   claude-code:test-skill:
     addon_id: test-skill
     name: Test Skill
@@ -23,7 +23,7 @@ addons:
     integration_type: skill
     target_agent: claude-code
     checksum: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-    installed_at: '2026-08-19T11:38:23.580860+00:00'
+    installed_at: '2026-08-20T12:50:17.545683+00:00'
   codex:github-mcp:
     addon_id: github-mcp
     name: GitHub MCP Server
@@ -31,7 +31,7 @@ addons:
     integration_type: mcp
     target_agent: codex
     checksum: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-    installed_at: '2026-08-19T11:38:28.586174+00:00'
+    installed_at: '2026-08-20T12:50:24.669445+00:00'
   claude-code:code-reviewer:
     addon_id: code-reviewer
     name: Code Reviewer Skill
@@ -39,7 +39,7 @@ addons:
     integration_type: skill
     target_agent: claude-code
     checksum: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-    installed_at: '2026-08-19T11:38:27.916450+00:00'
+    installed_at: '2026-08-20T12:50:23.138026+00:00'
   claude-code:composite-bundle:
     addon_id: composite-bundle
     name: Composite Bundle Plugin
@@ -47,4 +47,4 @@ addons:
     integration_type: plugin
     target_agent: claude-code
     checksum: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-    installed_at: '2026-08-19T11:38:36.479640+00:00'
+    installed_at: '2026-08-20T12:50:41.878358+00:00'
