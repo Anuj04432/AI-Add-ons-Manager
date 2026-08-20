@@ -274,3 +274,92 @@ class CompatibilityEngine:
         return [
             self.evaluate(manifest, agent, requested_scope, registry=registry) for agent in agents
         ]
+
+    def evaluate_batch(
+        self,
+        manifests: list[IntegrationManifest],
+        agent: AgentDetectionResult,
+        requested_scope: Scope = Scope.WORKSPACE,
+        registry: Registry | None = None,
+    ) -> list[CompatibilityResult]:
+        """Evaluate compatibility for a batch of manifests against an agent, catching inter-addon conflicts."""
+        active_registry = registry or self.registry
+        results: list[CompatibilityResult] = []
+        batch_ids = {m.id.lower() for m in manifests}
+
+        # 1. Evaluate individual compatibility
+        for manifest in manifests:
+            res = self.evaluate(manifest, agent, requested_scope, registry=active_registry)
+            results.append(res)
+
+        # 2. Check inter-addon resource conflicts
+        # Check MCP server name collisions with different configurations
+        mcp_servers: dict[str, str] = {}
+        for manifest in manifests:
+            if manifest.integration_type == IntegrationType.MCP and manifest.handler_spec.mcp:
+                server_name = manifest.id.lower()
+                pkg = manifest.handler_spec.mcp.package_name
+                if server_name in mcp_servers and mcp_servers[server_name] != pkg:
+                    conflict_msg = (
+                        f"Inter-addon conflict: Multiple add-ons configure MCP server '{server_name}' "
+                        f"with differing package names ('{mcp_servers[server_name]}' vs '{pkg}')."
+                    )
+                    for r in results:
+                        if r.addon_id.lower() == manifest.id.lower():
+                            r.compatible = False
+                            r.reasons.append(conflict_msg)
+                            r.unsupported_requirements.append(conflict_msg)
+                else:
+                    mcp_servers[server_name] = pkg
+
+        # Check dependency conflicts between manifests in the batch
+        dep_constraints: dict[str, tuple[str, str | None]] = {}
+        from packaging.specifiers import InvalidSpecifier, SpecifierSet
+
+        for manifest in manifests:
+            for dep in manifest.dependencies:
+                dep_key = f"{dep.type.value}:{dep.name.lower()}"
+                if dep.version_constraint:
+                    if dep_key in dep_constraints:
+                        prev_manifest_id, prev_constraint = dep_constraints[dep_key]
+                        if prev_constraint:
+                            try:
+                                combined = SpecifierSet(f"{prev_constraint},{dep.version_constraint}")
+                                test_versions = [
+                                    f"{maj}.{min_}.{pat}"
+                                    for maj in range(0, 15)
+                                    for min_ in range(0, 20)
+                                    for pat in (0, 1, 5)
+                                ]
+                                if not any(v in combined for v in test_versions):
+                                    conflict_msg = (
+                                        f"Inter-addon dependency conflict on '{dep.name}': '{manifest.name}' "
+                                        f"requires '{dep.version_constraint}', conflicting with '{prev_manifest_id}' "
+                                        f"requiring '{prev_constraint}'."
+                                    )
+                                    for r in results:
+                                        if r.addon_id.lower() in (manifest.id.lower(), prev_manifest_id.lower()):
+                                            r.compatible = False
+                                            r.reasons.append(conflict_msg)
+                                            r.unsupported_requirements.append(conflict_msg)
+                            except (InvalidSpecifier, Exception):
+                                pass
+                    else:
+                        dep_constraints[dep_key] = (manifest.id, dep.version_constraint)
+
+                # Check ADDON dependencies within batch
+                if dep.type == DependencyType.ADDON and dep.required:
+                    if dep.name.lower() not in batch_ids:
+                        if active_registry and not active_registry.get(dep.name):
+                            missing_dep_msg = (
+                                f"Required add-on dependency '{dep.name}' for '{manifest.name}' "
+                                "is not present in the batch or registry."
+                            )
+                            for r in results:
+                                if r.addon_id.lower() == manifest.id.lower():
+                                    r.compatible = False
+                                    r.reasons.append(missing_dep_msg)
+                                    r.missing_requirements.append(missing_dep_msg)
+
+        return results
+
