@@ -14,6 +14,7 @@ from aiaddons.core.exceptions import (
     UnsupportedScopeError,
 )
 from aiaddons.core.installer.models import (
+    BatchInstallationPlan,
     InstallationPlan,
     InstallationTransaction,
     TransactionPhase,
@@ -200,6 +201,90 @@ class InstallationEngine:
                 requested_scope=scope,
                 compatibility_result=compat,
                 plan=None,
+                is_dry_run=True,
+                error_message=str(exc),
+            )
+
+        if self._wal_manager:
+            self._wal_manager.write_transaction(tx)
+        return tx
+
+    def generate_batch_plan(
+        self,
+        manifests: list[IntegrationManifest],
+        agent: AgentDetectionResult,
+        scope: Scope = Scope.WORKSPACE,
+        registry: Registry | None = None,
+    ) -> BatchInstallationPlan:
+        """Generate a combined installation plan for a batch of add-ons."""
+        if not manifests:
+            raise InstallationPlanningError("Cannot generate batch installation plan with zero manifests.")
+
+        plans: list[InstallationPlan] = []
+        combined_warnings: list[str] = []
+
+        for manifest in manifests:
+            plan = self.generate_plan(manifest, agent, scope, registry=registry)
+            plans.append(plan)
+            combined_warnings.extend(plan.warnings)
+
+        batch_plan = BatchInstallationPlan(
+            plans=plans,
+            target_agent=agent.agent_id,
+            target_agent_name=agent.name,
+            target_scope=scope,
+            warnings=combined_warnings,
+        )
+        batch_plan.validate_safety()
+        return batch_plan
+
+    def create_batch_transaction(
+        self,
+        manifests: list[IntegrationManifest],
+        agent: AgentDetectionResult,
+        scope: Scope = Scope.WORKSPACE,
+        registry: Registry | None = None,
+    ) -> InstallationTransaction:
+        """Create and initialize a dry-run batch installation transaction."""
+        tx_id = f"tx_batch_{uuid.uuid4().hex[:12]}"
+        active_reg = registry or self._registry
+        compat_results = self._compatibility_engine.evaluate_batch(manifests, agent, scope, registry=active_reg)
+        is_all_compat = all(cr.compatible for cr in compat_results)
+        first_compat = compat_results[0] if compat_results else None
+
+        tx: InstallationTransaction
+        try:
+            if not is_all_compat:
+                incompat_reasons = []
+                for cr in compat_results:
+                    if not cr.compatible:
+                        incompat_reasons.extend(cr.reasons)
+                raise IncompatibleAgentError("; ".join(incompat_reasons))
+
+            batch_plan = self.generate_batch_plan(manifests, agent, scope, registry=registry)
+            tx = InstallationTransaction(
+                transaction_id=tx_id,
+                phase=TransactionPhase.PLANNED,
+                manifest=manifests[0] if manifests else None,
+                manifests=manifests,
+                agent=agent,
+                requested_scope=scope,
+                compatibility_result=first_compat,
+                plan=batch_plan.plans[0] if batch_plan.plans else None,
+                batch_plan=batch_plan,
+                is_dry_run=True,
+            )
+        except Exception as exc:
+            tx = InstallationTransaction(
+                transaction_id=tx_id,
+                phase=TransactionPhase.FAILED,
+                manifest=manifests[0] if manifests else None,
+                manifests=manifests,
+                agent=agent,
+                requested_scope=scope,
+                compatibility_result=first_compat,
+                plan=None,
+                batch_plan=None,
                 is_dry_run=True,
                 error_message=str(exc),
             )
