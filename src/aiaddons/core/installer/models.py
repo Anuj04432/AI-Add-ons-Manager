@@ -525,6 +525,44 @@ class InstallationPlan(BaseModel):
                 validate_rollback_operation_safety(rb)
 
 
+class BatchInstallationPlan(BaseModel):
+    """Structured, declarative plan describing operations for a batch of add-ons."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    plans: list[InstallationPlan]
+    target_agent: str
+    target_agent_name: str
+    target_scope: Scope
+    warnings: list[str] = Field(default_factory=list)
+    risk_level: RiskLevel = RiskLevel.LOW
+    reversible: bool = True
+    rollback_info: RollbackMetadata = Field(
+        default_factory=lambda: RollbackMetadata(
+            reversible=True,
+            rollback_operations=[],
+            instructions="Batch installation rollback.",
+        )
+    )
+
+    @property
+    def planned_operations(self) -> list[BaseOperation]:
+        """Aggregate all operations across all plans in the batch."""
+        ops: list[BaseOperation] = []
+        for plan in self.plans:
+            ops.extend(plan.planned_operations)
+        return ops
+
+    def validate_safety(self) -> None:
+        """Validate safety of all plans in the batch."""
+        for plan in self.plans:
+            plan.validate_safety()
+
+        if self.rollback_info and self.rollback_info.rollback_operations:
+            for rb in self.rollback_info.rollback_operations:
+                validate_rollback_operation_safety(rb)
+
+
 class TransactionPhase(StrEnum):
     """Lifecyle phases of an installation transaction."""
 
@@ -547,10 +585,12 @@ class InstallationTransaction(BaseModel):
 
     transaction_id: str
     phase: TransactionPhase = TransactionPhase.REQUESTED
-    manifest: IntegrationManifest
+    manifest: IntegrationManifest | None = None
     agent: AgentDetectionResult
     requested_scope: Scope
     compatibility_result: CompatibilityResult | None = None
     plan: InstallationPlan | None = None
     is_dry_run: bool = True
     error_message: str | None = None
+    manifests: list[IntegrationManifest] = Field(default_factory=list)
+    batch_plan: BatchInstallationPlan | None = None
