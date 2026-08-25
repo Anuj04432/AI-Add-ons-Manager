@@ -2,13 +2,20 @@
 
 import os
 import tempfile
+from contextlib import AbstractContextManager
 from pathlib import Path
 
+from filelock import BaseFileLock
 from pydantic import BaseModel, ConfigDict, Field
 
 from aiaddons.core.exceptions import InstallationError
 from aiaddons.core.models.agent import Scope
 from aiaddons.core.models.manifest import IntegrationType
+from aiaddons.state.locking import (
+    DEFAULT_LOCK_TIMEOUT,
+    get_lock_file_path,
+    state_file_lock,
+)
 
 
 def _atomic_write_file(dir_path: Path, filename: str, content: str) -> Path:
@@ -59,20 +66,38 @@ class InstalledStateDatabase(BaseModel):
 
 
 class InstalledStateStore:
-    """Store for managing installed add-on records in ~/.aiaddons/state.json."""
+    """Store for managing installed add-on records in ~/.aiaddons/state.json with file locking."""
 
-    def __init__(self, store_dir: Path | None = None) -> None:
+    def __init__(
+        self,
+        store_dir: Path | None = None,
+        lock_timeout: float = DEFAULT_LOCK_TIMEOUT,
+    ) -> None:
         if store_dir is None:
             self.store_dir = Path.home() / ".aiaddons"
         else:
             self.store_dir = store_dir.expanduser()
         self.state_file_name = "state.json"
+        self.lock_timeout = lock_timeout
+
+    def get_state_file_path(self) -> Path:
+        """Get absolute path to state.json."""
+        return self.store_dir / self.state_file_name
+
+    def get_lock_path(self) -> Path:
+        """Get absolute path to companion state.json.lock file."""
+        return get_lock_file_path(self.get_state_file_path())
+
+    def lock(self, timeout: float | None = None) -> AbstractContextManager[BaseFileLock]:
+        """Acquire exclusive file lock for state.json."""
+        eff_timeout = self.lock_timeout if timeout is None else timeout
+        return state_file_lock(self.get_state_file_path(), timeout=eff_timeout)
 
     def _get_key(self, target_agent: str, scope: Scope, addon_id: str) -> str:
         return f"{target_agent.strip().lower()}:{scope.value}:{addon_id.strip().lower()}"
 
     def _load_db(self) -> InstalledStateDatabase:
-        state_file = self.store_dir / self.state_file_name
+        state_file = self.get_state_file_path()
         if not state_file.exists() or not state_file.is_file():
             return InstalledStateDatabase()
         try:
@@ -84,24 +109,26 @@ class InstalledStateStore:
             raise InstallationError(f"Failed to load state database '{state_file}': {err}") from err
 
     def record_installation(self, record: InstalledAddonRecord) -> None:
-        """Atomically record or update an installed add-on entry."""
-        db = self._load_db()
-        key = self._get_key(record.target_agent, record.scope, record.addon_id)
-        db.records[key] = record
+        """Atomically record or update an installed add-on entry with exclusive locking."""
+        with self.lock():
+            db = self._load_db()
+            key = self._get_key(record.target_agent, record.scope, record.addon_id)
+            db.records[key] = record
 
-        content = db.model_dump_json(indent=2) + "\n"
-        _atomic_write_file(self.store_dir, self.state_file_name, content)
-
-    def remove_installation(self, target_agent: str, scope: Scope, addon_id: str) -> bool:
-        """Atomically remove an installed add-on entry."""
-        db = self._load_db()
-        key = self._get_key(target_agent, scope, addon_id)
-        if key in db.records:
-            del db.records[key]
             content = db.model_dump_json(indent=2) + "\n"
             _atomic_write_file(self.store_dir, self.state_file_name, content)
-            return True
-        return False
+
+    def remove_installation(self, target_agent: str, scope: Scope, addon_id: str) -> bool:
+        """Atomically remove an installed add-on entry with exclusive locking."""
+        with self.lock():
+            db = self._load_db()
+            key = self._get_key(target_agent, scope, addon_id)
+            if key in db.records:
+                del db.records[key]
+                content = db.model_dump_json(indent=2) + "\n"
+                _atomic_write_file(self.store_dir, self.state_file_name, content)
+                return True
+            return False
 
     def get_installed(
         self,
