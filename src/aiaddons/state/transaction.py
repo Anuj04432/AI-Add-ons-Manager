@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from aiaddons.core.exceptions import InstallationError, SecurityValidationError
-from aiaddons.core.execution.models import ExecutionStatus
 from aiaddons.core.installer.models import (
     InstallationTransaction,
     TransactionPhase,
@@ -120,6 +119,8 @@ class TransactionWALManager:
             engine = ExecutionEngine()
         else:
             engine = execution_engine
+
+        from aiaddons.core.execution.models import ExecutionStatus
 
         if tx.plan:
             # Execute rollback for safety

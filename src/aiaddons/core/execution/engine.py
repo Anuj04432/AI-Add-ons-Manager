@@ -612,14 +612,14 @@ class ExecutionEngine:
         rollback_stack: list[RollbackAction] = []
 
         for plan in batch_plan.plans:
-            acq_res = acquired_results.get(plan.addon_id)
+            plan_acq_res = acquired_results.get(plan.addon_id)
             for op in plan.planned_operations:
                 try:
                     rollback_action = self._dispatch_operation(
                         op,
                         dry_run=is_dry,
                         secret_values=secret_values,
-                        acquired_result=acq_res,
+                        acquired_result=plan_acq_res,
                     )
                     rollback_stack.append(rollback_action)
                     executed_results.append(

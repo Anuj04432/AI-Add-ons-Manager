@@ -1,6 +1,5 @@
 """Installer subpackage containing domain models, operation specs, and transactional engine."""
 
-from aiaddons.core.installer.engine import InstallationEngine
 from aiaddons.core.installer.models import (
     AddMcpServerOperation,
     AddPluginReferenceOperation,
@@ -22,6 +21,7 @@ from aiaddons.core.installer.models import (
     WriteFileOperation,
     validate_operation_safety,
 )
+from aiaddons.core.installer.engine import InstallationEngine
 
 __all__ = [
     "AddMcpServerOperation",
