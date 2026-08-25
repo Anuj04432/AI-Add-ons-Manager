@@ -104,3 +104,16 @@ class ArchiveSecurityError(SourceAcquisitionError, SecurityValidationError):
 
 class GitAcquisitionError(SourceAcquisitionError):
     """Error raised when git clone, fetch, or checkout fails."""
+
+
+class SyncError(InstallationError):
+    """Base exception for synchronization errors."""
+
+
+class LockfileNotFoundError(SyncError):
+    """Error raised when a required workspace lockfile or stack file is missing."""
+
+
+class SyncVerificationError(SyncError, VerificationError):
+    """Error raised when post-sync verification detects remaining state discrepancies."""
+
