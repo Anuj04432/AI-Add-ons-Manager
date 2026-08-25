@@ -32,6 +32,20 @@ class InstallationError(AIAddonsError):
     """Base exception for installation failures."""
 
 
+class StateLockTimeoutError(InstallationError):
+    """Error raised when acquiring an exclusive file lock on state/lockfile times out."""
+
+    def __init__(self, lock_path: Path | str, timeout: float, message: str | None = None) -> None:
+        self.lock_path = Path(lock_path)
+        self.timeout = timeout
+        default_msg = (
+            f"Timed out after {timeout:.1f} seconds waiting to acquire lock '{self.lock_path}'. "
+            "Another aiaddons process appears to be running on this target. "
+            "Please wait for it to finish and retry."
+        )
+        super().__init__(message or default_msg)
+
+
 class SecretResolutionError(InstallationError):
     """Error raised when resolving or validating required secrets fails."""
 
