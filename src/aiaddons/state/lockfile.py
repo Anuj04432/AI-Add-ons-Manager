@@ -2,13 +2,20 @@
 
 import os
 import tempfile
+from contextlib import AbstractContextManager
 from pathlib import Path
 
 import yaml
+from filelock import BaseFileLock
 from pydantic import BaseModel, ConfigDict, Field
 
 from aiaddons.core.exceptions import InstallationError
 from aiaddons.core.models.manifest import IntegrationType
+from aiaddons.state.locking import (
+    DEFAULT_LOCK_TIMEOUT,
+    get_lock_file_path,
+    state_file_lock,
+)
 
 
 def _atomic_write_file(dir_path: Path, filename: str, content: str) -> Path:
@@ -58,13 +65,29 @@ class WorkspaceLockfile(BaseModel):
 
 
 class LockfileManager:
-    """Manager for managing workspace aiaddons.lock files atomically."""
+    """Manager for managing workspace aiaddons.lock files atomically with file locking."""
 
     LOCKFILE_NAME: str = "aiaddons.lock"
+
+    def __init__(self, lock_timeout: float = DEFAULT_LOCK_TIMEOUT) -> None:
+        self.lock_timeout = lock_timeout
 
     def get_lockfile_path(self, workspace_dir: Path) -> Path:
         """Get absolute path to aiaddons.lock in workspace."""
         return workspace_dir.expanduser().resolve() / self.LOCKFILE_NAME
+
+    def get_lock_path(self, workspace_dir: Path) -> Path:
+        """Get absolute path to companion aiaddons.lock.lock file in workspace."""
+        return get_lock_file_path(self.get_lockfile_path(workspace_dir))
+
+    def lock(
+        self,
+        workspace_dir: Path,
+        timeout: float | None = None,
+    ) -> AbstractContextManager[BaseFileLock]:
+        """Acquire exclusive file lock for workspace aiaddons.lock."""
+        eff_timeout = self.lock_timeout if timeout is None else timeout
+        return state_file_lock(self.get_lockfile_path(workspace_dir), timeout=eff_timeout)
 
     def _load_lockfile(self, workspace_dir: Path) -> WorkspaceLockfile:
         lock_path = self.get_lockfile_path(workspace_dir)
@@ -82,28 +105,30 @@ class LockfileManager:
             raise InstallationError(f"Failed to read lockfile '{lock_path}': {err}") from err
 
     def update_lockfile(self, workspace_dir: Path, entry: LockfileAddonEntry) -> Path:
-        """Atomically update workspace lockfile with entry."""
-        lock = self._load_lockfile(workspace_dir)
-        key = f"{entry.target_agent.strip().lower()}:{entry.addon_id.strip().lower()}"
-        lock.addons[key] = entry
+        """Atomically update workspace lockfile with entry with exclusive locking."""
+        with self.lock(workspace_dir):
+            lock = self._load_lockfile(workspace_dir)
+            key = f"{entry.target_agent.strip().lower()}:{entry.addon_id.strip().lower()}"
+            lock.addons[key] = entry
 
-        dumped_dict = lock.model_dump(mode="json")
-        yaml_content = yaml.safe_dump(dumped_dict, sort_keys=False)
-        resolved_ws = workspace_dir.expanduser().resolve()
-        return _atomic_write_file(resolved_ws, self.LOCKFILE_NAME, yaml_content)
-
-    def remove_from_lockfile(self, workspace_dir: Path, target_agent: str, addon_id: str) -> bool:
-        """Atomically remove an add-on entry from workspace lockfile."""
-        lock = self._load_lockfile(workspace_dir)
-        key = f"{target_agent.strip().lower()}:{addon_id.strip().lower()}"
-        if key in lock.addons:
-            del lock.addons[key]
             dumped_dict = lock.model_dump(mode="json")
             yaml_content = yaml.safe_dump(dumped_dict, sort_keys=False)
             resolved_ws = workspace_dir.expanduser().resolve()
-            _atomic_write_file(resolved_ws, self.LOCKFILE_NAME, yaml_content)
-            return True
-        return False
+            return _atomic_write_file(resolved_ws, self.LOCKFILE_NAME, yaml_content)
+
+    def remove_from_lockfile(self, workspace_dir: Path, target_agent: str, addon_id: str) -> bool:
+        """Atomically remove an add-on entry from workspace lockfile with exclusive locking."""
+        with self.lock(workspace_dir):
+            lock = self._load_lockfile(workspace_dir)
+            key = f"{target_agent.strip().lower()}:{addon_id.strip().lower()}"
+            if key in lock.addons:
+                del lock.addons[key]
+                dumped_dict = lock.model_dump(mode="json")
+                yaml_content = yaml.safe_dump(dumped_dict, sort_keys=False)
+                resolved_ws = workspace_dir.expanduser().resolve()
+                _atomic_write_file(resolved_ws, self.LOCKFILE_NAME, yaml_content)
+                return True
+            return False
 
     def get_entries(self, workspace_dir: Path) -> list[LockfileAddonEntry]:
         """Get all add-on entries from workspace lockfile."""
