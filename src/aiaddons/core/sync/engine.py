@@ -44,6 +44,7 @@ from aiaddons.core.sync.models import (
     SyncStatus,
     SyncTargetSpec,
 )
+from aiaddons.core.update.engine import UpdateEngine
 from aiaddons.state.lockfile import LockfileManager, WorkspaceLockfile
 from aiaddons.state.store import InstalledAddonRecord, InstalledStateStore
 from aiaddons.state.transaction import TransactionWALManager
@@ -97,6 +98,7 @@ class SyncEngine:
         lockfile_manager: LockfileManager | None = None,
         installer_engine: InstallationEngine | None = None,
         execution_engine: ExecutionEngine | None = None,
+        update_engine: UpdateEngine | None = None,
         registry: Registry | None = None,
         wal_manager: TransactionWALManager | None = None,
     ) -> None:
@@ -112,6 +114,15 @@ class SyncEngine:
             state_store=self.state_store,
             lockfile_manager=self.lockfile_manager,
             registry=registry,
+        )
+        self.update_engine = update_engine or UpdateEngine(
+            state_store=self.state_store,
+            lockfile_manager=self.lockfile_manager,
+            installer_engine=self.installer_engine,
+            execution_engine=self.execution_engine,
+            compatibility_engine=self.installer_engine._compatibility_engine,
+            registry=registry,
+            wal_manager=self.wal_manager,
         )
 
     def load_expected_specs(
@@ -449,59 +460,9 @@ class SyncEngine:
                         )
                     pruned_addons.append(item.addon_id)
 
-            # 2. Update version-mismatched add-ons if requested
-            # NOTE: This minimal version-swap logic removes the old version and installs the expected version.
-            # When a standalone `aiaddons update` command is developed later, this version-swap reconciliation
-            # should be factored out into a shared update service module.
+            # 2. Update version-mismatched add-ons if requested using shared UpdateEngine
             if plan.to_update:
                 for item in plan.to_update:
-                    # A. Remove old version
-                    target_rec = self.state_store.get_record(
-                        target_agent=target_agent.agent_id,
-                        scope=plan.scope,
-                        addon_id=item.addon_id,
-                    )
-                    old_manifest = active_reg.get(item.addon_id) if active_reg else None
-                    if not old_manifest and target_rec:
-                        old_manifest = _synthesize_manifest_from_record(target_rec)
-                    elif not old_manifest:
-                        old_manifest = IntegrationManifest(
-                            id=item.addon_id,
-                            name=item.name,
-                            version=item.installed_version or "1.0.0",
-                            description="Installed add-on",
-                            license="MIT",
-                            category="general",
-                            integration_type=item.integration_type or IntegrationType.MCP,
-                            target_agents=[target_agent.agent_id],
-                            supported_scopes=[plan.scope],
-                            source=SourceSpec(source_type=SourceType.LOCAL, path="."),
-                            trust=TrustMetadata(
-                                verification_status=TrustVerificationStatus.UNVERIFIED,
-                                publisher=PublisherClaimSpec(name="Installed State"),
-                            ),
-                            handler_spec=HandlerSpecContainer(),
-                        )
-
-                    removal_plan = self.installer_engine.generate_removal_plan(
-                        manifest=old_manifest,
-                        agent=target_agent,
-                        scope=plan.scope,
-                        registry=active_reg,
-                        force=True,
-                    )
-                    rem_res = self.execution_engine.execute_plan(
-                        plan=removal_plan,
-                        dry_run=False,
-                        is_removal=True,
-                    )
-                    if rem_res.status != ExecutionStatus.SUCCESS:
-                        raise SyncError(
-                            f"Failed to remove existing version of '{item.addon_id}' during update: "
-                            f"{rem_res.error_message}"
-                        )
-
-                    # B. Install expected version
                     new_manifest = active_reg.get(item.addon_id) if active_reg else None
                     if not new_manifest:
                         raise SyncError(
@@ -513,21 +474,31 @@ class SyncEngine:
                             f"but registry provides '{new_manifest.version}'."
                         )
 
-                    install_plan = self.installer_engine.generate_plan(
-                        manifest=new_manifest,
-                        agent=target_agent,
-                        scope=plan.scope,
+                    try:
+                        u_plan = self.update_engine.plan_update(
+                            addon_id=item.addon_id,
+                            target_agent=target_agent,
+                            scope=plan.scope,
+                            target_version=item.expected_version,
+                            registry=active_reg,
+                            workspace_dir=resolved_ws,
+                        )
+                    except Exception as exc:
+                        raise SyncError(
+                            f"Failed to plan update for '{item.addon_id}': {exc}"
+                        ) from exc
+
+                    u_res = self.update_engine.execute_update(
+                        plan=u_plan,
+                        target_agent=target_agent,
+                        workspace_dir=resolved_ws,
                         registry=active_reg,
-                    )
-                    inst_res = self.execution_engine.execute_plan(
-                        plan=install_plan,
                         dry_run=False,
                         secret_values=secret_values,
                     )
-                    if inst_res.status != ExecutionStatus.SUCCESS:
+                    if not u_res.success:
                         raise SyncError(
-                            f"Failed to install updated version of '{item.addon_id}': "
-                            f"{inst_res.error_message}"
+                            f"Failed to update '{item.addon_id}': {u_res.error_message}"
                         )
                     updated_addons.append(item.addon_id)
 
