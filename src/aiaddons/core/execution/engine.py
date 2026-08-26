@@ -63,7 +63,9 @@ from aiaddons.state.transaction import TransactionWALManager
 
 if TYPE_CHECKING:
     from aiaddons.core.acquisition.engine import AcquisitionEngine
+    from aiaddons.core.update.models import UpdatePlan
     from aiaddons.registry.registry import Registry
+
 
 
 class RollbackAction:
@@ -798,6 +800,389 @@ class ExecutionEngine:
             addon_id=",".join(p.addon_id for p in batch_plan.plans),
             target_agent=batch_plan.target_agent,
             scope=batch_plan.target_scope,
+            status=ExecutionStatus.SUCCESS,
+            executed_operations=executed_results,
+        )
+
+    def execute_update_plan(
+        self,
+        update_plan: UpdatePlan,
+        transaction: InstallationTransaction | None = None,
+        dry_run: bool = False,
+        secret_values: dict[str, str] | None = None,
+        registry: Registry | None = None,
+    ) -> ExecutionResult:
+        """Execute all removal and installation operations in an update plan within ONE atomic transaction."""
+        update_plan.validate_safety()
+        if transaction is not None:
+            transaction.is_dry_run = dry_run
+        is_dry = dry_run
+        secrets_list = list(secret_values.values()) if secret_values else []
+
+        if update_plan.is_empty:
+            return ExecutionResult(
+                addon_id="",
+                target_agent=update_plan.target_agent,
+                scope=update_plan.target_scope,
+                status=ExecutionStatus.SUCCESS,
+            )
+
+        tx_id = transaction.transaction_id if transaction else f"tx_update_{uuid.uuid4().hex[:12]}"
+        new_manifests = [item.new_manifest for item in update_plan.items]
+
+        # 1. Source acquisition phase for all new manifests
+        if transaction:
+            transaction.phase = TransactionPhase.SOURCE_ACQUISITION
+            if self.wal_manager and not is_dry:
+                self.wal_manager.write_transaction(transaction)
+
+        acquired_results: dict[str, AcquiredSourceResult] = {}
+        for item in update_plan.items:
+            plan = item.install_plan
+            plan_tx_id = f"{tx_id}_{plan.addon_id}"
+            try:
+                acq_res = self.acquisition_engine.acquire_source(
+                    manifest_id=plan.addon_id,
+                    source=plan.source,
+                    transaction_id=plan_tx_id,
+                    dry_run=is_dry,
+                )
+                acquired_results[plan.addon_id] = acq_res
+            except Exception as exc:
+                err_msg = mask_secrets_in_text(
+                    f"Source acquisition failed for '{plan.addon_id}': {exc}", secrets_list
+                )
+                if transaction:
+                    transaction.phase = TransactionPhase.FAILED
+                    transaction.error_message = err_msg
+                    if self.wal_manager and not is_dry:
+                        self.wal_manager.write_transaction(transaction)
+                    transaction.phase = TransactionPhase.ROLLED_BACK
+                    if self.wal_manager and not is_dry:
+                        self.wal_manager.write_transaction(transaction)
+
+                if not is_dry:
+                    for it in update_plan.items:
+                        self.acquisition_engine.cleanup_staging(f"{tx_id}_{it.addon_id}")
+
+                return ExecutionResult(
+                    addon_id=",".join(it.addon_id for it in update_plan.items),
+                    target_agent=update_plan.target_agent,
+                    scope=update_plan.target_scope,
+                    status=ExecutionStatus.FAILED,
+                    error_message=err_msg,
+                )
+
+            # Bind staged paths to operations for this plan
+            staged_addon_dir = acq_res.staging_path
+            if plan.source and plan.source.path and plan.source.path not in (".", ""):
+                try:
+                    clean_rel = validate_safe_relative_path(plan.source.path)
+                    if clean_rel:
+                        candidate_sub = acq_res.staging_path / clean_rel
+                        if candidate_sub.exists():
+                            staged_addon_dir = candidate_sub
+                except ValueError as err:
+                    err_msg = mask_secrets_in_text(
+                        f"Security violation in source path '{plan.source.path}': {err}",
+                        secrets_list,
+                    )
+                    if transaction:
+                        transaction.phase = TransactionPhase.FAILED
+                        transaction.error_message = err_msg
+                        if self.wal_manager and not is_dry:
+                            self.wal_manager.write_transaction(transaction)
+                        transaction.phase = TransactionPhase.ROLLED_BACK
+                        if self.wal_manager and not is_dry:
+                            self.wal_manager.write_transaction(transaction)
+                    if not is_dry:
+                        for it in update_plan.items:
+                            self.acquisition_engine.cleanup_staging(f"{tx_id}_{it.addon_id}")
+
+                    return ExecutionResult(
+                        addon_id=",".join(it.addon_id for it in update_plan.items),
+                        target_agent=update_plan.target_agent,
+                        scope=update_plan.target_scope,
+                        status=ExecutionStatus.FAILED,
+                        error_message=err_msg,
+                    )
+
+            for op in plan.planned_operations:
+                if isinstance(op, AddSkillOperation):
+                    try:
+                        if not op.source_dir or not Path(op.source_dir).is_relative_to(
+                            staged_addon_dir
+                        ):
+                            op.source_dir = str(staged_addon_dir)
+                    except ValueError:
+                        op.source_dir = str(staged_addon_dir)
+                elif isinstance(op, CopyFileOperation):
+                    try:
+                        if not Path(op.source_path).is_relative_to(staged_addon_dir):
+                            op.source_path = str(staged_addon_dir / op.source_path)
+                    except ValueError:
+                        op.source_path = str(staged_addon_dir / op.source_path)
+
+        # 2. Executing Phase
+        if transaction:
+            transaction.phase = TransactionPhase.EXECUTING
+            if self.wal_manager and not is_dry:
+                self.wal_manager.write_transaction(transaction)
+
+        executed_results: list[OperationExecutionResult] = []
+        rollback_stack: list[RollbackAction] = []
+
+        for item in update_plan.items:
+            # 2A. Execute removal operations for old version
+            for op in item.removal_plan.planned_operations:
+                try:
+                    rollback_action = self._dispatch_operation(
+                        op,
+                        dry_run=is_dry,
+                        secret_values=secret_values,
+                    )
+                    rollback_stack.append(rollback_action)
+                    executed_results.append(
+                        OperationExecutionResult(
+                            op_type=op.op_type.value,
+                            description=op.description,
+                            status=ExecutionStatus.SUCCESS,
+                            target_root=op.target_root,
+                            target_path=op.target_path or "",
+                        )
+                    )
+                except Exception as err:
+                    err_msg = mask_secrets_in_text(
+                        f"Failed executing removal '{op.description}' for '{item.addon_id}': {err}",
+                        secrets_list,
+                    )
+                    executed_results.append(
+                        OperationExecutionResult(
+                            op_type=op.op_type.value,
+                            description=op.description,
+                            status=ExecutionStatus.FAILED,
+                            target_root=op.target_root,
+                            target_path=op.target_path or "",
+                            error_message=err_msg,
+                        )
+                    )
+
+                    if transaction:
+                        transaction.phase = TransactionPhase.FAILED
+                        transaction.error_message = err_msg
+                        if self.wal_manager and not is_dry:
+                            self.wal_manager.write_transaction(transaction)
+
+                    rolled_back_results = self._rollback_executed_stack(rollback_stack)
+
+                    if transaction:
+                        transaction.phase = TransactionPhase.ROLLED_BACK
+                        if self.wal_manager and not is_dry:
+                            self.wal_manager.write_transaction(transaction)
+
+                    if not is_dry:
+                        for it in update_plan.items:
+                            self.acquisition_engine.cleanup_staging(f"{tx_id}_{it.addon_id}")
+
+                    return ExecutionResult(
+                        addon_id=",".join(it.addon_id for it in update_plan.items),
+                        target_agent=update_plan.target_agent,
+                        scope=update_plan.target_scope,
+                        status=ExecutionStatus.ROLLED_BACK,
+                        executed_operations=executed_results,
+                        rolled_back_operations=rolled_back_results,
+                        error_message=err_msg,
+                    )
+
+            # 2B. Execute install operations for new version
+            plan_acq_res = acquired_results.get(item.addon_id)
+            for op in item.install_plan.planned_operations:
+                try:
+                    rollback_action = self._dispatch_operation(
+                        op,
+                        dry_run=is_dry,
+                        secret_values=secret_values,
+                        acquired_result=plan_acq_res,
+                    )
+                    rollback_stack.append(rollback_action)
+                    executed_results.append(
+                        OperationExecutionResult(
+                            op_type=op.op_type.value,
+                            description=op.description,
+                            status=ExecutionStatus.SUCCESS,
+                            target_root=op.target_root,
+                            target_path=op.target_path or "",
+                        )
+                    )
+                except Exception as err:
+                    err_msg = mask_secrets_in_text(
+                        f"Failed executing install '{op.description}' for '{item.addon_id}': {err}",
+                        secrets_list,
+                    )
+                    executed_results.append(
+                        OperationExecutionResult(
+                            op_type=op.op_type.value,
+                            description=op.description,
+                            status=ExecutionStatus.FAILED,
+                            target_root=op.target_root,
+                            target_path=op.target_path or "",
+                            error_message=err_msg,
+                        )
+                    )
+
+                    if transaction:
+                        transaction.phase = TransactionPhase.FAILED
+                        transaction.error_message = err_msg
+                        if self.wal_manager and not is_dry:
+                            self.wal_manager.write_transaction(transaction)
+
+                    rolled_back_results = self._rollback_executed_stack(rollback_stack)
+
+                    if transaction:
+                        transaction.phase = TransactionPhase.ROLLED_BACK
+                        if self.wal_manager and not is_dry:
+                            self.wal_manager.write_transaction(transaction)
+
+                    if not is_dry:
+                        for it in update_plan.items:
+                            self.acquisition_engine.cleanup_staging(f"{tx_id}_{it.addon_id}")
+
+                    return ExecutionResult(
+                        addon_id=",".join(it.addon_id for it in update_plan.items),
+                        target_agent=update_plan.target_agent,
+                        scope=update_plan.target_scope,
+                        status=ExecutionStatus.ROLLED_BACK,
+                        executed_operations=executed_results,
+                        rolled_back_operations=rolled_back_results,
+                        error_message=err_msg,
+                    )
+
+        # 3. Post-execution Verification Phase
+        for item in update_plan.items:
+            verification_res = self.verification_engine.verify_plan(
+                plan=item.install_plan,
+                dry_run=is_dry,
+                secret_values=secret_values,
+            )
+
+            if not verification_res.verified or verification_res.status == VerificationStatus.FAILED:
+                err_msg = (
+                    "; ".join(verification_res.errors)
+                    if verification_res.errors
+                    else f"Post-execution verification failed for updated add-on '{item.addon_id}'."
+                )
+                err_msg = mask_secrets_in_text(err_msg, secrets_list)
+                if transaction:
+                    transaction.phase = TransactionPhase.FAILED
+                    transaction.error_message = err_msg
+                    if self.wal_manager and not is_dry:
+                        self.wal_manager.write_transaction(transaction)
+
+                rolled_back_results = self._rollback_executed_stack(rollback_stack)
+                for it in update_plan.items:
+                    self.verification_engine.verify_rollback(it.install_plan)
+
+                if transaction:
+                    transaction.phase = TransactionPhase.ROLLED_BACK
+                    if self.wal_manager and not is_dry:
+                        self.wal_manager.write_transaction(transaction)
+
+                if not is_dry:
+                    for it in update_plan.items:
+                        self.acquisition_engine.cleanup_staging(f"{tx_id}_{it.addon_id}")
+
+                return ExecutionResult(
+                    addon_id=",".join(it.addon_id for it in update_plan.items),
+                    target_agent=update_plan.target_agent,
+                    scope=update_plan.target_scope,
+                    status=ExecutionStatus.ROLLED_BACK,
+                    executed_operations=executed_results,
+                    rolled_back_operations=rolled_back_results,
+                    error_message=err_msg,
+                )
+
+        if transaction:
+            transaction.phase = TransactionPhase.VERIFIED
+            if self.wal_manager and not is_dry:
+                self.wal_manager.write_transaction(transaction)
+
+        # 4. Atomic Persistence upon commit for all updated add-ons
+        if not is_dry:
+            try:
+                now_str = datetime.now(UTC).isoformat()
+                for item in update_plan.items:
+                    plan = item.install_plan
+                    installed_files = [
+                        r.target_path for r in executed_results if r.target_path
+                    ]
+                    if self.state_store:
+                        record = InstalledAddonRecord(
+                            addon_id=plan.addon_id,
+                            name=plan.addon_name,
+                            version=plan.addon_version,
+                            target_agent=plan.target_agent,
+                            scope=plan.target_scope,
+                            integration_type=plan.integration_type,
+                            installed_at=now_str,
+                            installed_files=installed_files,
+                        )
+                        self.state_store.record_installation(record)
+
+                    if self.lockfile_manager and plan.target_scope == Scope.WORKSPACE:
+                        entry = LockfileAddonEntry(
+                            addon_id=plan.addon_id,
+                            name=plan.addon_name,
+                            version=plan.addon_version,
+                            integration_type=plan.integration_type,
+                            target_agent=plan.target_agent,
+                            checksum=plan.source.checksum if plan.source else None,
+                            installed_at=now_str,
+                        )
+                        self.lockfile_manager.update_lockfile(self.workspace_dir, entry)
+            except Exception as exc:
+                err_msg = f"State persistence error: {exc}"
+                if transaction:
+                    transaction.phase = TransactionPhase.FAILED
+                    transaction.error_message = err_msg
+                    if self.wal_manager and not is_dry:
+                        self.wal_manager.write_transaction(transaction)
+
+                rolled_back_results = self._rollback_executed_stack(rollback_stack)
+
+                if transaction:
+                    transaction.phase = TransactionPhase.ROLLED_BACK
+                    if self.wal_manager and not is_dry:
+                        self.wal_manager.write_transaction(transaction)
+
+                if not is_dry:
+                    for it in update_plan.items:
+                        self.acquisition_engine.cleanup_staging(f"{tx_id}_{it.addon_id}")
+
+                return ExecutionResult(
+                    addon_id=",".join(it.addon_id for it in update_plan.items),
+                    target_agent=update_plan.target_agent,
+                    scope=update_plan.target_scope,
+                    status=ExecutionStatus.ROLLED_BACK,
+                    executed_operations=executed_results,
+                    rolled_back_operations=rolled_back_results,
+                    error_message=err_msg,
+                )
+
+        if transaction:
+            if not is_dry:
+                transaction.phase = TransactionPhase.COMMITTED
+                if self.wal_manager:
+                    self.wal_manager.write_transaction(transaction)
+                for it in update_plan.items:
+                    self.acquisition_engine.cleanup_staging(f"{tx_id}_{it.addon_id}")
+        elif not is_dry:
+            for it in update_plan.items:
+                self.acquisition_engine.cleanup_staging(f"{tx_id}_{it.addon_id}")
+
+        return ExecutionResult(
+            addon_id=",".join(it.addon_id for it in update_plan.items),
+            target_agent=update_plan.target_agent,
+            scope=update_plan.target_scope,
             status=ExecutionStatus.SUCCESS,
             executed_operations=executed_results,
         )
