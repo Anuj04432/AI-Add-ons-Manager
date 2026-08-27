@@ -101,11 +101,13 @@ class SyncEngine:
         update_engine: UpdateEngine | None = None,
         registry: Registry | None = None,
         wal_manager: TransactionWALManager | None = None,
+        workspace_dir: Path | None = None,
     ) -> None:
         self.state_store = state_store or InstalledStateStore()
         self.lockfile_manager = lockfile_manager or LockfileManager()
         self.wal_manager = wal_manager or TransactionWALManager()
         self.registry = registry
+        self.workspace_dir = workspace_dir
         self.installer_engine = installer_engine or InstallationEngine(
             registry=registry, wal_manager=self.wal_manager
         )
@@ -114,6 +116,7 @@ class SyncEngine:
             state_store=self.state_store,
             lockfile_manager=self.lockfile_manager,
             registry=registry,
+            workspace_dir=workspace_dir,
         )
         self.update_engine = update_engine or UpdateEngine(
             state_store=self.state_store,
@@ -123,6 +126,7 @@ class SyncEngine:
             compatibility_engine=self.installer_engine._compatibility_engine,
             registry=registry,
             wal_manager=self.wal_manager,
+            workspace_dir=workspace_dir,
         )
 
     def load_expected_specs(
