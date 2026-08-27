@@ -1,10 +1,11 @@
-"""Textual interactive terminal UI for AI Add-ons Manager (Phase 5B.10)."""
+"""Textual interactive terminal UI for AI Add-ons Manager (Phase 5B & Phase 6)."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.widgets import (
     Button,
@@ -20,6 +21,7 @@ from textual.widgets import (
 
 from aiaddons.agents.manager import AgentDetectionManager
 from aiaddons.core.compatibility.engine import CompatibilityEngine
+from aiaddons.core.drift import detect_installation_drift
 from aiaddons.core.execution.engine import ExecutionEngine
 from aiaddons.core.execution.external.security import mask_secrets_in_text
 from aiaddons.core.execution.models import ExecutionStatus
@@ -29,18 +31,38 @@ from aiaddons.core.installer.models import (
     InstallationTransaction,
     TransactionPhase,
 )
-from aiaddons.core.models.agent import AgentDetectionResult, Scope
-from aiaddons.core.models.manifest import IntegrationManifest
+from aiaddons.core.models.agent import AgentCapability, AgentDetectionResult, Scope
+from aiaddons.core.models.manifest import IntegrationManifest, IntegrationType
+from aiaddons.core.update.engine import UpdateEngine, is_newer_version
+from aiaddons.core.update.models import UpdatePlan
 from aiaddons.core.verification.engine import VerificationEngine
 from aiaddons.core.verification.models import VerificationStatus
 from aiaddons.registry.registry import Registry
 from aiaddons.state.lockfile import LockfileManager
-from aiaddons.state.store import InstalledStateStore
+from aiaddons.state.store import InstalledAddonRecord, InstalledStateStore
 from aiaddons.state.transaction import TransactionWALManager
+from aiaddons.tui.screens.health import HealthScreen
+from aiaddons.tui.screens.modals import (
+    DriftConfirmModal,
+    RemoveConfirmModal,
+    UpdatePlanModal,
+)
+from aiaddons.tui.screens.sync import SyncScreen
 
 
 class AIAddonsTUIApp(App[None]):
-    """Textual TUI interface for add-on discovery, compatibility check, and installer."""
+    """Textual TUI interface for add-on discovery, compatibility check, installer, doctor, and sync."""
+
+    BINDINGS = [
+        Binding("h", "doctor", "Health Check"),
+        Binding("s", "sync", "Sync Workspace"),
+        Binding("i", "install", "Install"),
+        Binding("r", "remove", "Remove"),
+        Binding("u", "update", "Update"),
+        Binding("c", "check_compat", "Check Compat"),
+        Binding("p", "preview_plan", "Preview Plan"),
+        Binding("q", "quit", "Quit"),
+    ]
 
     CSS = """
     Screen {
@@ -104,10 +126,17 @@ class AIAddonsTUIApp(App[None]):
     """
 
     TITLE = "AI Add-ons Manager"
-    SUB_TITLE = "Interactive Add-on Discovery & Transactional Installer"
+    SUB_TITLE = "Interactive Discovery, Management, Diagnostics & Synchronization"
 
-    def __init__(self, registry_dir: Path | None = None) -> None:
+    def __init__(
+        self,
+        registry_dir: Path | None = None,
+        workspace_dir: Path | None = None,
+        store_dir: Path | None = None,
+    ) -> None:
         super().__init__()
+        self.workspace_dir = (workspace_dir or Path.cwd()).resolve()
+        self.store_dir = store_dir or (Path.home() / ".aiaddons")
         self.registry_dir = registry_dir or self._default_registry_dir()
         self.registry: Registry | None = None
         self.manifests: list[IntegrationManifest] = []
@@ -144,30 +173,27 @@ class AIAddonsTUIApp(App[None]):
                 with Vertical(id="secrets-container"):
                     yield Label(id="secrets-label", content="")
                 with Horizontal(id="action-bar"):
-                    yield Button("Check Compatibility", id="btn-compat", variant="default")
-                    yield Button("Preview Plan", id="btn-plan", variant="default")
-                    yield Button(
-                        "Confirm Installation",
-                        id="btn-confirm",
-                        variant="primary",
-                        disabled=True,
-                    )
+                    yield Button("Check Compat [C]", id="btn-compat", variant="default")
+                    yield Button("Preview Plan [P]", id="btn-plan", variant="default")
+                    yield Button("Install [I]", id="btn-confirm", variant="primary", disabled=True)
+                    yield Button("Remove [R]", id="btn-remove", variant="error", disabled=True)
+                    yield Button("Update [U]", id="btn-update", variant="warning", disabled=True)
+                    yield Button("Health [H]", id="btn-health", variant="default")
+                    yield Button("Sync [S]", id="btn-sync", variant="default")
         yield Footer()
 
     def on_mount(self) -> None:
         """Initialize registry and agent detection on app startup."""
         if self.registry_dir.exists():
             self.registry, _ = Registry.from_directory(self.registry_dir)
+        else:
+            self.registry, _ = Registry.load_auto(custom_dir=self.registry_dir)
+
+        if self.registry:
             self.manifests = self.registry.list()
 
         manager = AgentDetectionManager()
-        self.detected_agents = manager.detect_agents()
-
-        # Populate Addon ListView
-        list_view = self.query_one("#addon-list", ListView)
-        list_view.clear()
-        for m in self.manifests:
-            list_view.append(ListItem(Label(f"{m.name} ({m.id})"), id=f"item-{m.id}"))
+        self.detected_agents = manager.detect_agents(project_path=self.workspace_dir)
 
         if self.detected_agents:
             installed = [a for a in self.detected_agents.values() if a.installed]
@@ -175,8 +201,69 @@ class AIAddonsTUIApp(App[None]):
                 self.selected_agent = installed[0]
             else:
                 self.selected_agent = list(self.detected_agents.values())[0]
+        else:
+            self.selected_agent = AgentDetectionResult(
+                agent_id="claude-code",
+                name="Claude Code",
+                installed=True,
+                capabilities=[AgentCapability.MCP, AgentCapability.SKILL],
+            )
 
+        self._refresh_addon_list()
         self._update_config_summary()
+
+    def _get_addon_installed_record(self, addon_id: str) -> InstalledAddonRecord | None:
+        """Look up the installed record for an add-on in the state store."""
+        if not self.selected_agent:
+            return None
+        state_store = InstalledStateStore(store_dir=self.store_dir)
+        return state_store.get_record(
+            target_agent=self.selected_agent.agent_id,
+            scope=self.selected_scope,
+            addon_id=addon_id,
+        )
+
+    def _get_installation_status(self, manifest: IntegrationManifest) -> tuple[bool, str, str | None]:
+        """Return (is_installed, installed_version, newer_version_or_None)."""
+        rec = self._get_addon_installed_record(manifest.id)
+        if rec is not None:
+            installed_ver = rec.version or "1.0.0"
+            has_newer = is_newer_version(installed_ver, manifest.version)
+            newer_ver = manifest.version if has_newer else None
+            return True, installed_ver, newer_ver
+
+        # Check lockfile entries as fallback
+        if self.selected_scope == Scope.WORKSPACE and self.selected_agent:
+            lockfile_mgr = LockfileManager()
+            entries = lockfile_mgr.get_entries(self.workspace_dir)
+            for entry in entries:
+                if (
+                    entry.addon_id.strip().lower() == manifest.id.strip().lower()
+                    and entry.target_agent.strip().lower() == self.selected_agent.agent_id.strip().lower()
+                ):
+                    installed_ver = entry.version or "1.0.0"
+                    has_newer = is_newer_version(installed_ver, manifest.version)
+                    newer_ver = manifest.version if has_newer else None
+                    return True, installed_ver, newer_ver
+
+        return False, "", None
+
+    def _refresh_addon_list(self) -> None:
+        """Populate or refresh the Addon ListView with installation status badges."""
+        list_view = self.query_one("#addon-list", ListView)
+        list_view.clear()
+
+        for m in self.manifests:
+            is_inst, curr_v, newer_v = self._get_installation_status(m)
+            if is_inst and newer_v:
+                badge = f"[bold yellow](Update: v{curr_v}->v{newer_v})[/bold yellow]"
+            elif is_inst:
+                badge = f"[bold green](Installed v{curr_v})[/bold green]"
+            else:
+                badge = "[dim](Available)[/dim]"
+
+            label_str = f"{m.name} ({m.id}) {badge}"
+            list_view.append(ListItem(Label(label_str), id=f"item-{m.id}"))
 
     def _update_config_summary(self) -> None:
         summary_widget = self.query_one("#config-summary", Static)
@@ -197,19 +284,39 @@ class AIAddonsTUIApp(App[None]):
     def _update_details_view(self) -> None:
         detail_view = self.query_one("#detail-view", Markdown)
         confirm_btn = self.query_one("#btn-confirm", Button)
+        remove_btn = self.query_one("#btn-remove", Button)
+        update_btn = self.query_one("#btn-update", Button)
+
         confirm_btn.disabled = True
+        remove_btn.disabled = True
+        update_btn.disabled = True
 
         if not self.selected_manifest:
             detail_view.update("No add-on selected.")
             return
 
         m = self.selected_manifest
+        is_inst, curr_ver, newer_ver = self._get_installation_status(m)
+
         md_text = f"## {m.name} (`{m.id}`)\n\n"
         md_text += (
             f"**Version:** {m.version} | **License:** {m.license} | **Category:** {m.category}\n\n"
         )
         md_text += f"{m.description}\n\n"
         md_text += f"**Integration Type:** `{m.integration_type.value}`\n\n"
+
+        if is_inst:
+            if newer_ver:
+                md_text += (
+                    f"**Installation Status:** ⚠️ **Installed** (v{curr_ver}) — "
+                    f"**Update Available (v{newer_ver})**\n\n"
+                )
+                update_btn.disabled = False
+            else:
+                md_text += f"**Installation Status:** ✅ **Installed** (v{curr_ver})\n\n"
+            remove_btn.disabled = False
+        else:
+            md_text += "**Installation Status:** ⚪ **Not Installed**\n\n"
 
         if self.selected_agent:
             compat_engine = CompatibilityEngine(registry=self.registry)
@@ -218,7 +325,8 @@ class AIAddonsTUIApp(App[None]):
             )
             if compat.compatible:
                 md_text += f"### Compatibility: ✅ Compatible with {self.selected_agent.name}\n\n"
-                confirm_btn.disabled = False
+                if not is_inst:
+                    confirm_btn.disabled = False
             else:
                 reasons = "\n".join([f"- {r}" for r in compat.reasons])
                 md_text += (
@@ -255,6 +363,47 @@ class AIAddonsTUIApp(App[None]):
             container.mount(inp)
             self.secret_inputs[spec.name] = inp
 
+    # -------------------------------------------------------------------------
+    # Keybinding & Button Actions
+    # -------------------------------------------------------------------------
+    def action_doctor(self) -> None:
+        """Open the HealthScreen diagnostics modal/screen."""
+        self.push_screen(HealthScreen(workspace_dir=self.workspace_dir, store_dir=self.store_dir))
+
+    def action_sync(self) -> None:
+        """Open the SyncScreen workspace reconciliation screen."""
+        self.push_screen(
+            SyncScreen(
+                workspace_dir=self.workspace_dir,
+                target_agent=self.selected_agent,
+                scope=self.selected_scope,
+                registry=self.registry,
+                store_dir=self.store_dir,
+            )
+        )
+
+    def action_install(self) -> None:
+        """Trigger add-on installation."""
+        btn = self.query_one("#btn-confirm", Button)
+        if not btn.disabled:
+            self._execute_real_installation()
+        else:
+            self.notify("Installation is not available for current selection.", severity="warning")
+
+    def action_remove(self) -> None:
+        """Trigger add-on removal with drift detection."""
+        self._initiate_removal()
+
+    def action_update(self) -> None:
+        """Trigger add-on version update with dry-run preview."""
+        self._initiate_update()
+
+    def action_check_compat(self) -> None:
+        self._run_compatibility_check()
+
+    def action_preview_plan(self) -> None:
+        self._run_plan_preview()
+
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Dispatch action buttons to core application engine services."""
         if event.button.id == "btn-compat":
@@ -263,7 +412,18 @@ class AIAddonsTUIApp(App[None]):
             self._run_plan_preview()
         elif event.button.id == "btn-confirm":
             self._execute_real_installation()
+        elif event.button.id == "btn-remove":
+            self._initiate_removal()
+        elif event.button.id == "btn-update":
+            self._initiate_update()
+        elif event.button.id == "btn-health":
+            self.action_doctor()
+        elif event.button.id == "btn-sync":
+            self.action_sync()
 
+    # -------------------------------------------------------------------------
+    # Compatibility & Plan Preview
+    # -------------------------------------------------------------------------
     def _run_compatibility_check(self) -> None:
         if not self.selected_manifest or not self.selected_agent:
             return
@@ -285,6 +445,7 @@ class AIAddonsTUIApp(App[None]):
         for r in compat.reasons:
             md += f"- {r}\n"
         detail_view.update(md)
+        self.notify(f"Compatibility check: {is_comp}", severity="information" if compat.compatible else "warning")
 
     def _run_plan_preview(self) -> None:
         if not self.selected_manifest or not self.selected_agent or not self.registry:
@@ -305,10 +466,15 @@ class AIAddonsTUIApp(App[None]):
                 md += f"- ✓ {op.description}\n"
             md += "\n*No changes were made to host system state.*\n"
             detail_view.update(md)
+            self.notify(f"Generated dry-run plan for {self.selected_manifest.name}.", severity="information")
         except Exception as exc:
             detail_view = self.query_one("#detail-view", Markdown)
             detail_view.update(f"## Plan Preview Error\n\n❌ {exc}")
+            self.notify(f"Plan error: {exc}", severity="error")
 
+    # -------------------------------------------------------------------------
+    # Installation Execution
+    # -------------------------------------------------------------------------
     def _execute_real_installation(self) -> None:
         """Delegate installation execution directly to core ExecutionEngine & VerificationEngine."""
         if not self.selected_manifest or not self.selected_agent or not self.registry:
@@ -322,11 +488,12 @@ class AIAddonsTUIApp(App[None]):
             val = inp.value.strip()
             if not val:
                 detail_view.update(f"## Installation Error\n\n❌ Secret '{name}' is required.")
+                self.notify(f"Secret '{name}' is required.", severity="error")
                 return
             secret_map[name] = val
 
-        wal_mgr = TransactionWALManager()
-        state_store = InstalledStateStore()
+        wal_mgr = TransactionWALManager(transactions_dir=self.store_dir / "transactions")
+        state_store = InstalledStateStore(store_dir=self.store_dir)
         lockfile_mgr = LockfileManager()
         inst_engine = InstallationEngine(registry=self.registry, wal_manager=wal_mgr)
         execution_engine = ExecutionEngine(
@@ -334,6 +501,7 @@ class AIAddonsTUIApp(App[None]):
             state_store=state_store,
             lockfile_manager=lockfile_mgr,
             registry=self.registry,
+            workspace_dir=self.workspace_dir,
         )
         verification_engine = VerificationEngine()
 
@@ -343,6 +511,7 @@ class AIAddonsTUIApp(App[None]):
             )
             if not tx.plan:
                 detail_view.update(f"## Planning Error\n\n❌ {tx.error_message}")
+                self.notify(f"Planning error: {tx.error_message}", severity="error")
                 return
 
             plan = tx.plan
@@ -370,6 +539,9 @@ class AIAddonsTUIApp(App[None]):
                     sym = "✓" if chk.status == VerificationStatus.PASSED else "✗"
                     md += f"- {sym} {chk_desc}\n"
                 detail_view.update(md)
+                self.notify(f"Successfully installed {self.selected_manifest.name}!", severity="information")
+                self._refresh_addon_list()
+                self._update_details_view()
             else:
                 tx.phase = TransactionPhase.ROLLED_BACK
                 raw_err = res.error_message or "Execution failed"
@@ -382,7 +554,258 @@ class AIAddonsTUIApp(App[None]):
                     rb_desc = mask_secrets_in_text(rb.description, list(secret_map.values()))
                     md += f"- ↩ {rb_desc}\n"
                 detail_view.update(md)
+                self.notify(f"Installation failed: {err_msg}", severity="error")
 
         except Exception as exc:
             err_msg = mask_secrets_in_text(str(exc), list(secret_map.values()))
             detail_view.update(f"## Installation Error\n\n❌ {err_msg}")
+            self.notify(f"Installation error: {err_msg}", severity="error")
+
+    # -------------------------------------------------------------------------
+    # Removal Flow & Drift Detection
+    # -------------------------------------------------------------------------
+    def _initiate_removal(self) -> None:
+        """Check installed state, run drift detection, and trigger removal confirmation modal."""
+        if not self.selected_manifest or not self.selected_agent:
+            return
+
+        is_inst, _, _ = self._get_installation_status(self.selected_manifest)
+        if not is_inst:
+            self.notify(f"'{self.selected_manifest.name}' is not installed.", severity="warning")
+            return
+
+        target_record = self._get_addon_installed_record(self.selected_manifest.id)
+
+        # Run drift detection
+        drifts = detect_installation_drift(
+            record=target_record,
+            manifest=self.selected_manifest,
+            agent=self.selected_agent,
+            scope=self.selected_scope,
+            workspace_dir=self.workspace_dir,
+        )
+
+        if drifts:
+            # Drift detected -> show Drift Confirmation Modal
+            modal = DriftConfirmModal(
+                addon_id=self.selected_manifest.id,
+                addon_name=self.selected_manifest.name,
+                drifts=drifts,
+            )
+            self.push_screen(modal, callback=self._handle_drift_confirm_result)
+        else:
+            # Generate removal plan for preview in standard confirm modal
+            inst_engine = InstallationEngine(registry=self.registry)
+            rem_plan = inst_engine.generate_removal_plan(
+                manifest=self.selected_manifest,
+                agent=self.selected_agent,
+                scope=self.selected_scope,
+                registry=self.registry,
+                force=False,
+            )
+            ops_desc = [op.description for op in rem_plan.planned_operations]
+            modal = RemoveConfirmModal(
+                manifest=self.selected_manifest,
+                agent_name=self.selected_agent.name,
+                scope=self.selected_scope.value,
+                planned_ops=ops_desc,
+            )
+            self.push_screen(modal, callback=self._handle_remove_confirm_result)
+
+    def _handle_drift_confirm_result(self, confirmed: bool | None) -> None:
+        if confirmed:
+            self._execute_removal(force=True)
+        else:
+            self.notify("Removal cancelled by user.", severity="information")
+
+    def _handle_remove_confirm_result(self, confirmed: bool | None) -> None:
+        if confirmed:
+            self._execute_removal(force=False)
+        else:
+            self.notify("Removal cancelled by user.", severity="information")
+
+    def _execute_removal(self, force: bool = False) -> None:
+        """Execute transactional removal with WAL, file locking, and verification."""
+        if not self.selected_manifest or not self.selected_agent:
+            return
+
+        wal_mgr = TransactionWALManager(transactions_dir=self.store_dir / "transactions")
+        state_store = InstalledStateStore(store_dir=self.store_dir)
+        lockfile_mgr = LockfileManager()
+        inst_engine = InstallationEngine(registry=self.registry, wal_manager=wal_mgr)
+        execution_engine = ExecutionEngine(
+            wal_manager=wal_mgr,
+            state_store=state_store,
+            lockfile_manager=lockfile_mgr,
+            registry=self.registry,
+            workspace_dir=self.workspace_dir,
+        )
+        verification_engine = VerificationEngine()
+        detail_view = self.query_one("#detail-view", Markdown)
+
+        try:
+            tx = inst_engine.create_removal_transaction(
+                manifest=self.selected_manifest,
+                agent=self.selected_agent,
+                scope=self.selected_scope,
+                registry=self.registry,
+                force=force,
+            )
+            if tx.phase == TransactionPhase.FAILED or tx.plan is None:
+                detail_view.update(f"## Removal Planning Error\n\n❌ {tx.error_message}")
+                self.notify(f"Removal planning error: {tx.error_message}", severity="error")
+                return
+
+            plan = tx.plan
+            tx.phase = TransactionPhase.REVIEWED
+            wal_mgr.write_transaction(tx)
+
+            exec_res = execution_engine.execute_plan(
+                plan=plan,
+                transaction=tx,
+                dry_run=False,
+                is_removal=True,
+            )
+
+            if exec_res.status != ExecutionStatus.SUCCESS:
+                detail_view.update(f"## Removal Execution Failed\n\n❌ {exec_res.error_message}")
+                self.notify(f"Removal failed: {exec_res.error_message}", severity="error")
+                return
+
+            # Verify removal
+            ver_res = verification_engine.verify_plan(plan, dry_run=False)
+            if not ver_res.verified:
+                err_str = "; ".join(ver_res.errors) if ver_res.errors else "Remnants remain."
+                detail_view.update(f"## Post-Removal Verification Failed\n\n❌ {err_str}")
+                self.notify(f"Verification warning: {err_str}", severity="warning")
+
+            # If plugin, clean up child components
+            if (
+                self.selected_manifest.integration_type == IntegrationType.PLUGIN
+                and self.selected_manifest.handler_spec.plugin
+            ):
+                for child_id in self.selected_manifest.handler_spec.plugin.components:
+                    state_store.remove_installation(
+                        target_agent=self.selected_agent.agent_id,
+                        scope=self.selected_scope,
+                        addon_id=child_id,
+                    )
+                    if self.selected_scope == Scope.WORKSPACE:
+                        lockfile_mgr.remove_from_lockfile(
+                            self.workspace_dir,
+                            target_agent=self.selected_agent.agent_id,
+                            addon_id=child_id,
+                        )
+
+            md = "## Removal Successful! 🗑️\n\n"
+            md += f"**Add-on:** {self.selected_manifest.name} (`{self.selected_manifest.id}`)\n"
+            md += f"**Agent:** {self.selected_agent.name}\n"
+            md += f"**Scope:** {self.selected_scope.value}\n\n"
+            md += "All configurations and assets have been cleaned up.\n"
+            detail_view.update(md)
+            self.notify(
+                f"Successfully removed {self.selected_manifest.name} ({self.selected_manifest.id})!",
+                severity="information",
+            )
+            self._refresh_addon_list()
+            self._update_details_view()
+
+        except Exception as exc:
+            detail_view.update(f"## Removal Error\n\n❌ {exc}")
+            self.notify(f"Removal error: {exc}", severity="error")
+
+    # -------------------------------------------------------------------------
+    # Update Flow
+    # -------------------------------------------------------------------------
+    def _initiate_update(self) -> None:
+        """Plan update for selected add-on and present preview modal."""
+        if not self.selected_manifest or not self.selected_agent:
+            return
+
+        state_store = InstalledStateStore(store_dir=self.store_dir)
+        lockfile_mgr = LockfileManager()
+        wal_mgr = TransactionWALManager(transactions_dir=self.store_dir / "transactions")
+        update_engine = UpdateEngine(
+            state_store=state_store,
+            lockfile_manager=lockfile_mgr,
+            registry=self.registry,
+            wal_manager=wal_mgr,
+            workspace_dir=self.workspace_dir,
+        )
+
+        try:
+            update_plan = update_engine.plan_update(
+                addon_id=self.selected_manifest.id,
+                target_agent=self.selected_agent,
+                scope=self.selected_scope,
+                registry=self.registry,
+                workspace_dir=self.workspace_dir,
+            )
+        except Exception as exc:
+            self.notify(f"Update planning error: {exc}", severity="error")
+            detail_view = self.query_one("#detail-view", Markdown)
+            detail_view.update(f"## Update Planning Error\n\n❌ {exc}")
+            return
+
+        if update_plan.is_empty:
+            self.notify(f"'{self.selected_manifest.name}' is already up to date.", severity="information")
+            return
+
+        modal = UpdatePlanModal(plan=update_plan)
+        self.push_screen(modal, callback=lambda confirmed: self._handle_update_confirm_result(confirmed, update_plan))
+
+    def _handle_update_confirm_result(self, confirmed: bool | None, update_plan: UpdatePlan) -> None:
+        if not confirmed:
+            self.notify("Update cancelled by user.", severity="information")
+            return
+        self._execute_update(update_plan)
+
+    def _execute_update(self, update_plan: UpdatePlan) -> None:
+        """Execute update within single WAL transaction and file locking."""
+        if not self.selected_agent:
+            return
+
+        state_store = InstalledStateStore(store_dir=self.store_dir)
+        lockfile_mgr = LockfileManager()
+        wal_mgr = TransactionWALManager(transactions_dir=self.store_dir / "transactions")
+        update_engine = UpdateEngine(
+            state_store=state_store,
+            lockfile_manager=lockfile_mgr,
+            registry=self.registry,
+            wal_manager=wal_mgr,
+            workspace_dir=self.workspace_dir,
+        )
+        detail_view = self.query_one("#detail-view", Markdown)
+
+        try:
+            res = update_engine.execute_update(
+                plan=update_plan,
+                target_agent=self.selected_agent,
+                workspace_dir=self.workspace_dir,
+                registry=self.registry,
+                dry_run=False,
+            )
+
+            if res.success:
+                item = update_plan.items[0] if update_plan.items else None
+                new_ver = item.target_version if item else "latest"
+                old_ver = item.current_version if item else ""
+                md = "## Update Successful! 🔄\n\n"
+                md += f"**Add-on:** {self.selected_manifest.name if self.selected_manifest else item.addon_id}\n"
+                md += f"**Updated:** `v{old_ver}` → `v{new_ver}`\n"
+                md += f"**Target Agent:** {self.selected_agent.name}\n\n"
+                md += "All removal and installation operations were committed atomically.\n"
+                detail_view.update(md)
+                self.notify(
+                    f"Successfully updated to v{new_ver}!",
+                    severity="information",
+                )
+                self._refresh_addon_list()
+                self._update_details_view()
+            else:
+                detail_view.update(f"## Update Failed ❌\n\n**Error:** {res.error_message}")
+                self.notify(f"Update failed: {res.error_message}", severity="error")
+
+        except Exception as exc:
+            detail_view.update(f"## Update Error\n\n❌ {exc}")
+            self.notify(f"Update error: {exc}", severity="error")
