@@ -69,7 +69,11 @@ def test_tui_app_mount_and_selection(tmp_path: Path) -> None:
             return_value={"claude-code": agent},
         )
         with mock_mgr:
-            tui_app = AIAddonsTUIApp(registry_dir=reg_dir)
+            tui_app = AIAddonsTUIApp(
+                registry_dir=reg_dir,
+                workspace_dir=tmp_path,
+                store_dir=tmp_path / ".aiaddons",
+            )
             async with tui_app.run_test() as pilot:
                 assert tui_app.is_running
                 assert len(tui_app.manifests) == 1
@@ -85,7 +89,7 @@ def test_tui_app_mount_and_selection(tmp_path: Path) -> None:
                 await pilot.pause()
 
                 # Press preview plan button
-                await pilot.click("#btn-plan")
+                tui_app.action_preview_plan()
                 await pilot.pause()
 
                 assert tui_app.current_plan is not None
