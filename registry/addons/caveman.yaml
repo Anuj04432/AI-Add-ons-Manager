@@ -1,0 +1,33 @@
+id: caveman
+name: Caveman Output Compression Skill
+version: 1.0.0
+description: Terse output-compression skill reducing agent token consumption by stripping filler prose and conversational hedging.
+documentation_url: https://github.com/JuliusBrussee/caveman
+license: MIT
+category: productivity
+integration_type: skill
+target_agents:
+  - "*"
+supported_scopes:
+  - global
+  - workspace
+source:
+  source_type: git
+  url: https://github.com/JuliusBrussee/caveman.git
+  ref: main
+  commit_sha: 4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e
+dependencies: []
+trust:
+  verification_status: verified
+  publisher:
+    name: Julius Brussee
+    url: https://github.com/JuliusBrussee
+    declared_verified: true
+tags:
+  - caveman
+  - token-optimization
+  - brevity
+  - productivity
+handler_spec:
+  skill:
+    skill_file: SKILL.md
