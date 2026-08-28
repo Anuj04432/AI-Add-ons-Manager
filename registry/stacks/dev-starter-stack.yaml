@@ -1,0 +1,7 @@
+version: "1.0"
+name: Developer Starter Stack
+description: Essential toolkit for AI coding agents combining repository operations, live documentation, and browser automation.
+addons:
+  - github-mcp
+  - context7-mcp
+  - playwright-mcp
