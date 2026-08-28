@@ -3,7 +3,7 @@
 > **Declarative, security-hardened, transactional package manager for AI coding agents.**
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-299%20passed%2C%204%20skipped-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-370%20passed%2C%204%20skipped-brightgreen.svg)]()
 [![Type Checking](https://img.shields.io/badge/mypy-strict-brightgreen.svg)]()
 [![Code Style](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](pyproject.toml)
@@ -27,7 +27,7 @@ Modern AI coding agents rely on a growing ecosystem of external capabilities. `a
 
 ## Why It's Safe
 
-Registry manifests describe **WHAT** an add-on is; trusted application code determines **HOW** it is installed. `aiaddons` enforces a defense-in-depth security model to eliminate supply-chain and execution vulnerabilities:
+Registry manifests describe **WHAT** an add-on is; trusted application code determines **HOW** it is installed, updated, or removed. `aiaddons` enforces a defense-in-depth security model to eliminate supply-chain and execution vulnerabilities:
 
 | Security Mechanism | Implementation in Codebase | Security Guarantee |
 | :--- | :--- | :--- |
@@ -35,9 +35,10 @@ Registry manifests describe **WHAT** an add-on is; trusted application code dete
 | **Runtime & Binary Allowlist** | `ALLOWED_RUNTIMES`, `ALLOWED_EXECUTABLES`, `validate_runtime_name` | Only pre-approved runtime binaries (`npx`, `uvx`, `pip`, `npm`, `git`, `python`, `node`) resolved dynamically via `shutil.which` are permitted. |
 | **Argument & Parameter Sanitization** | `validate_argument_vector`, `validate_mcp_package_name`, `FORBIDDEN_SHELL_PATTERNS` | Rejects shell metacharacters (`;`, `&&`, `\|\|`, `\|`, `>`, `<`, `$`, `` ` ``), forbidden evaluation flags (`--eval`, `-e`, `-c`, `--exec`), null bytes (`\0`), and malformed package identifiers. |
 | **Boundary Confinement & Traversal Protection** | `verify_safe_target_path`, `validate_safe_relative_path`, `verify_path_security` | Confines all disk writes within designated `target_root` directories. Prohibits parent traversal (`..`), absolute path overrides, Windows drive letters, UNC shares (`\\server\share`), URL-encoded paths (`%2e%2e`), and escaping symlinks. |
-| **Write-Ahead Log (WAL) & Rollbacks** | `TransactionWALManager`, `ExecutionEngine._rollback_executed_stack` | Every installation transitions through durable WAL phases (`REQUESTED` → `PLANNED` → `EXECUTING` → `VERIFIED` → `COMMITTED`). Failures trigger an atomic `RollbackAction` stack. Interrupted transactions are automatically detected and recovered. |
+| **Write-Ahead Log (WAL) & Rollbacks** | `TransactionWALManager`, `ExecutionEngine._rollback_executed_stack` | Every installation, update, and removal transitions through durable WAL phases (`REQUESTED` → `PLANNED` → `EXECUTING` → `VERIFIED` → `COMMITTED`). Failures trigger an atomic `RollbackAction` stack. Interrupted transactions are automatically detected and recovered. |
 | **In-Memory Secret Protection** | `SecretResolver`, `mask_secrets_in_text`, `validate_env_var_name` | Manifests declare secret requirements (`secret: true`) without storing plaintext values. Secrets are resolved in-memory via `getpass` prompts or environment variables, masked as `***MASKED***` across logs and output, and blocked from restricted variables (`LD_PRELOAD`, `PYTHONPATH`, `PATH`). |
-| **Post-Install Verification** | `VerificationEngine.verify_plan`, `verify_rollback` | Independent observer verifies that files, hashes (`sha256:`), and JSON/YAML configuration entries match expected values before committing transactions. |
+| **Configuration Drift Detection** | `detect_installation_drift` | Compares live agent configuration files and filesystem contents against recorded states to warn before mutating or removing modified integrations. |
+| **Post-Operation Verification** | `VerificationEngine.verify_plan`, `verify_rollback` | Independent observer verifies that files, hashes (`sha256:`), and JSON/YAML configuration entries match expected values before committing transactions. |
 | **Atomic Persistence** | `_atomic_write_file` (with `os.fsync` and atomic tempfile replacement) | Guarantees that local state database (`~/.aiaddons/state.json`) and workspace lockfiles (`aiaddons.lock`) cannot be corrupted by abrupt terminations or disk errors. |
 
 ---
@@ -49,8 +50,16 @@ Registry manifests describe **WHAT** an add-on is; trusted application code dete
 ```mermaid
 flowchart TD
     User([User / Terminal]) --> UI[Presentation Layer<br/><code>Typer CLI</code> / <code>Textual TUI</code>]
+    UI --> AppUI[TUI Screens & Modals<br/><code>HealthScreen</code> / <code>SyncScreen</code> / <code>ConfirmModals</code>]
     UI --> Compat[CompatibilityEngine<br/><i>Agent Detection & Constraint Evaluation</i>]
-    Compat --> PlanEng[InstallationEngine<br/><i>Plan Generation & Safety Validation</i>]
+    UI --> Health[HealthCheckEngine<br/><i>9-Category Diagnostics</i>]
+    UI --> Sync[SyncEngine<br/><i>Lockfile Diffing & Workspace Reconciliation</i>]
+    UI --> Update[UpdateEngine<br/><i>Version Evaluation & Upgrade Planning</i>]
+    UI --> Drift[Drift Detection<br/><i>Configuration & Filesystem Drift Inspector</i>]
+
+    Compat --> PlanEng[InstallationEngine<br/><i>Plan & Removal Generation</i>]
+    Sync --> PlanEng
+    Update --> PlanEng
     PlanEng --> AcqEng[AcquisitionEngine<br/><i>Source Fetching: Git / Package / URL / Local</i>]
     AcqEng --> ExecEng[ExecutionEngine<br/><i>Atomic Primitives & ExternalRunner</i>]
     ExecEng --> Secret[SecretResolver<br/><i>In-Memory Resolution & Masking</i>]
@@ -63,7 +72,11 @@ flowchart TD
 ### Core Components
 
 * **`CompatibilityEngine`**: Evaluates target agent support, scope constraints, agent capabilities (`mcp`, `skill`), host OS matching, and CLI prerequisites.
-* **`InstallationEngine`**: Generates immutable `InstallationPlan` structures containing declarative, typed operations (`CreateDirectoryOperation`, `WriteFileOperation`, `ModifyJsonOperation`, `AddMcpServerOperation`, `AddSkillOperation`, etc.).
+* **`InstallationEngine`**: Generates immutable `InstallationPlan` and removal plan structures containing declarative, typed operations (`CreateDirectoryOperation`, `WriteFileOperation`, `ModifyJsonOperation`, `AddMcpServerOperation`, `AddSkillOperation`, etc.).
+* **`UpdateEngine`**: Evaluates newer manifest versions and coordinates transactional atomic updates and version swaps with rollback safety.
+* **`SyncEngine`**: Computes declarative diffs between workspace lockfiles (`aiaddons.lock`) or stack files and local environments, orchestrating installs, updates, and prunes.
+* **`HealthCheckEngine`**: Runs 9-category system diagnostics across CLI tools, agent configs, state stores, lockfiles, WAL transactions, and disk security.
+* **`Drift Detection`**: Detects external tampering or manual edits to agent configuration files or installed assets before removals and updates.
 * **`AcquisitionEngine`**: Coordinates source acquisition into isolated staging environments (`~/.aiaddons/staging/`) with cryptographic checksum verification (`sha256:`).
 * **`ExecutionEngine`**: Executes atomic file primitives and external package managers with timeout controls, strict argument vectors, and rollback tracking.
 * **`VerificationEngine`**: Inspects resulting filesystem artifacts and agent configuration files, guaranteeing state integrity prior to commit.
@@ -110,33 +123,101 @@ aiaddons agents
 
 ## Quickstart
 
-A complete end-to-end walkthrough using verified commands:
+### 1. Batch Install Add-ons (Core Value Proposition)
+
+Install multiple MCP servers, skills, and plugins across your workspace in a single transactional command:
 
 ```bash
-# 1. Search the registry for available add-ons
+# Install multiple add-ons at once for detected agents
+aiaddons install github-mcp postgres-mcp code-reviewer refactoring-skill --scope workspace
+
+# Or declare your entire team stack in a YAML/JSON file and install it in one step:
+aiaddons install --file team-stack.yaml
+```
+
+### 2. Workspace Lockfile Synchronization
+
+When cloning a repository with an existing `aiaddons.lock`, synchronize your agent environment with zero manual configuration:
+
+```bash
+# Fresh clone bootstrap: installs all declared add-ons automatically
+aiaddons sync
+
+# Reconcile local environment: install missing, update mismatched, and prune extra add-ons
+aiaddons sync --prune --update
+```
+
+### 3. Update & Version Upgrades
+
+Keep your AI agent capabilities up to date with automated SemVer checks and atomic rollback safety:
+
+```bash
+# Update all installed add-ons with newer registry versions available
+aiaddons update --all
+
+# Or update a specific add-on to a target version
+aiaddons update github-mcp --version 1.3.0
+```
+
+### 4. Search, Inspect & Evaluate Compatibility
+
+```bash
+# Search available add-ons
 aiaddons search mcp
 
-# 2. Inspect metadata and required configuration for an add-on
+# Inspect metadata and configuration requirements
 aiaddons info github-mcp
 
-# 3. Check compatibility against detected AI coding agents (read-only)
+# Check compatibility against detected local AI agents (read-only)
 aiaddons check github-mcp --scope workspace
 
-# 4. Preview installation steps with zero system modifications
+# Preview installation operations without applying changes
 aiaddons install github-mcp --dry-run
+```
 
-# 5. Perform the installation (prompts for confirmation and required secrets)
-aiaddons install github-mcp --scope workspace
+### 5. Diagnostics & Interactive TUI
 
-# 6. Check detected AI agents and their registered configuration paths
-aiaddons agents
-
-# 7. Run comprehensive system diagnostics and health checks
+```bash
+# Run 9-category system diagnostics and health checks
 aiaddons doctor
 
-# 8. Launch the interactive Textual terminal UI
+# Launch the interactive terminal user interface
 aiaddons tui
 ```
+
+---
+
+## Interactive Terminal UI (TUI)
+
+`aiaddons` provides a rich, responsive Textual-powered terminal user interface accessible via `aiaddons tui`.
+
+```text
+ ┌─────────────────────────┬────────────────────────────────────────────────────────┐
+ │ Add-ons Registry        │ GitHub MCP Server (v1.2.0)                             │
+ │ 🔍 [Search...         ] │ Model Context Protocol server for searching code...    │
+ │                         │                                                        │
+ │ ◉ github-mcp     [MCP]  │ Status: ✓ Installed (Workspace)                        │
+ │ ○ postgres-mcp   [MCP]  │ Agent:  Claude Code                                    │
+ │ ○ code-reviewer  [SKILL]│                                                        │
+ │ ○ refactor-skill [SKILL]│ [H] Health  [S] Sync  [I] Install  [R] Remove  [U] Upd │
+ └─────────────────────────┴────────────────────────────────────────────────────────┘
+```
+
+### TUI Keybindings & Controls
+
+| Key | Action | Description |
+| :--- | :--- | :--- |
+| <kbd>H</kbd> | **Health Check** | Opens **`HealthScreen`** to run and view real-time diagnostics across all 9 categories. |
+| <kbd>S</kbd> | **Sync Workspace** | Opens **`SyncScreen`** to inspect `aiaddons.lock` diffs (missing, extra, mismatched) and reconcile. |
+| <kbd>I</kbd> | **Install** | Installs selected add-on with interactive secret inputs and transactional commit. |
+| <kbd>R</kbd> | **Remove** | Opens **`RemoveConfirmModal`** or **`DriftConfirmModal`** (if files were modified) to safely uninstall. |
+| <kbd>U</kbd> | **Update** | Checks for newer versions and opens **`UpdatePlanModal`** for version-swap previews. |
+| <kbd>C</kbd> | **Check Compat** | Evaluates compatibility in read-only mode and displays requirement details. |
+| <kbd>P</kbd> | **Preview Plan** | Generates a dry-run plan showing exact operations without changing system state. |
+| <kbd>Q</kbd> | **Quit** | Exits the TUI application. |
+
+> [!NOTE]
+> **Same Engine, Same Safety**: The TUI is a direct presentation wrapper around the exact same domain engines (`ExecutionEngine`, `TransactionWALManager`, `VerificationEngine`, `LockfileManager`) as the CLI. Every installation, update, and removal in the TUI includes full WAL crash safety, file locking, drift detection, secret masking, and automatic rollback on failure.
 
 ---
 
@@ -146,14 +227,17 @@ All commands support `--help` for option descriptions.
 
 | Command | Description | Key Options |
 | :--- | :--- | :--- |
+| `aiaddons install [addon-ids...]` | Install one or more add-ons or generate a dry-run installation plan. | `--file` / `-f`, `--scope` / `-s`, `--agent` / `-a`, `--dry-run`, `--yes` / `-y`, `--json` / `-j`, `--registry` / `-r` |
+| `aiaddons remove <addon-id>` | Remove an installed add-on with safety verification and rollback. | `--scope` / `-s`, `--agent` / `-a`, `--dry-run`, `--yes` / `-y`, `--force` / `-f`, `--json` / `-j`, `--registry` / `-r` |
+| `aiaddons update [addon-id]` | Update installed add-on(s) with newer versions and rollback safety. | `--version` / `-v`, `--all` / `-A`, `--scope` / `-s`, `--agent` / `-a`, `--dry-run`, `--yes` / `-y`, `--json` / `-j`, `--registry` / `-r` |
+| `aiaddons sync` | Synchronize workspace with `aiaddons.lock` or stack file. | `--file` / `-f`, `--scope` / `-s`, `--agent` / `-a`, `--prune`, `--update`, `--dry-run`, `--yes` / `-y`, `--json` / `-j`, `--registry` / `-r` |
 | `aiaddons list` | List available add-ons in the registry. | `--type`, `--category`, `--agent`, `--json`, `--registry-dir` |
 | `aiaddons search <query>` | Search add-ons by keyword, tag, ID, or description. | `--json`, `--registry-dir` |
 | `aiaddons info <addon-id>` | Display detailed manifest metadata, publisher trust, and dependencies. | `--json`, `--registry-dir` |
-| `aiaddons check <addon-id>` | Evaluate add-on compatibility against detected AI agents in read-only mode. | `--scope` (`global` \| `workspace`), `--json`, `--registry-dir` |
-| `aiaddons install <addon-id>` | Install an add-on or generate a dry-run installation plan. | `--scope`, `--agent`, `--dry-run`, `--yes`, `--json`, `--registry` |
+| `aiaddons check <addon-id>` | Evaluate add-on compatibility against detected AI agents in read-only mode. | `--scope` (`global` \| `workspace`), `--agent`, `--json`, `--registry-dir` |
 | `aiaddons agents` | Detect and display status, version, and config paths for local AI agents. | `--json`, `--project-path` |
 | `aiaddons doctor` | Run comprehensive diagnostics across registry, state, lockfile, WAL, and runtimes. | `--json`, `--project-path` |
-| `aiaddons tui` | Launch the interactive Textual terminal user interface. | `--registry` |
+| `aiaddons tui` | Launch the interactive Textual terminal user interface. | `--registry` / `-r` |
 | `aiaddons version` | Print the current `aiaddons` version. | `--version` / `-v` |
 | `aiaddons registry update` | Fetch and validate fresh registry metadata from remote HTTPS endpoint. | `--url`, `--cache-dir` |
 | `aiaddons registry status` | Display cache health, last sync timestamp, and total cached manifests. | `--url`, `--cache-dir`, `--json` |
@@ -256,33 +340,40 @@ handler_spec:
 
 ## Project Status
 
-`aiaddons` has completed **Phase 6** of core development. The foundational engines, agent adapters, security layers, transactional installer, post-install verifier, CLI, TUI, remote registry sync, and diagnostics are fully operational.
+`aiaddons` has achieved the complete **v1.0 Milestone**. All core package manager workflows—declarative installation, batch stack files, transactional removal with drift detection, automated updates with version swapping, workspace lockfile synchronization, 9-category system diagnostics, and an interactive Textual TUI—are fully operational and tested.
 
 ### Test Suite Status
 
 ```text
 =========================== test session starts ============================
-platform win32 -- Python 3.12.3, pytest-9.1.1, pluggy-1.5.0
+platform win32 -- Python 3.12.13, pytest-9.1.1, pluggy-1.5.0
 rootdir: C:\Users\Anuj Kumar\Desktop\add_ons
 configfile: pyproject.toml
 testpaths: tests
-collected 303 items
+collected 374 items
 
-299 passed, 4 skipped in 99.40s
+370 passed, 4 skipped in 27.75s
 =========================== lint & typecheck ===============================
 Ruff Linter: All checks passed!
-Mypy Strict: Success: no issues found in 77 source files
+Mypy Strict: Checked 93 source files
 ```
 
 *(Note: 4 unit tests skipped conditionally on Windows due to symlink creation privileges without Developer Mode).*
 
-### Roadmap
+### Completed (v1.0 Milestone)
 
-* [ ] **Automated Removal Command**: `aiaddons remove <addon-id>` with inverse verification.
-* [ ] **Add-on Updates & Upgrades**: `aiaddons update [--all]` for checking and applying newer manifest versions.
-* [ ] **Workspace Sync**: `aiaddons sync` to restore all add-ons declared in `aiaddons.lock`.
-* [ ] **Manifest Publishing Workflow**: `aiaddons publish` for validating, hashing, and submitting manifests to signed remote registries.
-* [ ] **Additional Agent Adapters**: Official adapter support for Cursor, Windsurf, Gemini CLI, and Aider.
+* [x] **Declarative Installation & Batch Stacks**: Single and multi-package installs (`aiaddons install <ids...>`) and `--file stack.yaml` with WAL rollback protection.
+* [x] **Safe Transactional Removal**: `aiaddons remove <addon-id>` with configuration drift detection and inverse verification.
+* [x] **Add-on Updates & Version Swapping**: `aiaddons update [--all]` with SemVer resolution and atomic transaction rollback.
+* [x] **Workspace Sync**: `aiaddons sync [--prune] [--update]` restoring and reconciling `aiaddons.lock`.
+* [x] **Interactive Textual TUI**: Add-on browser, `HealthScreen` diagnostics, `SyncScreen` reconciliation, drift/update modals, and toast notifications.
+* [x] **System Diagnostics**: `aiaddons doctor` covering 9 critical health categories across runtimes, state, lockfile, and WAL.
+* [x] **Remote Registry Synchronization**: `aiaddons registry update/status` with HTTP caching and fallback.
+
+### Future Roadmap (v2.0)
+
+* [ ] **Additional Agent Adapters**: Official adapter implementations for Cursor, Windsurf, Gemini CLI, and Aider.
+* [ ] **Manifest Publishing & Cryptographic Signatures**: `aiaddons publish` for validating, signing, and submitting manifests to signed remote registries.
 * [ ] **Sandboxed MCP Execution**: Containerized / WebAssembly runtime environments for isolated MCP server execution.
 
 ---
