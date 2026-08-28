@@ -2,13 +2,12 @@ id: github-mcp
 name: GitHub MCP Server
 version: 1.2.0
 description: Model Context Protocol server for searching code, managing PRs, and inspecting issues.
-documentation_url: https://github.com/modelcontextprotocol/servers
+documentation_url: https://github.com/github/github-mcp-server
 license: MIT
 category: developer-tools
 integration_type: mcp
 target_agents:
-  - claude-code
-  - codex
+  - "*"
 supported_scopes:
   - global
   - workspace
@@ -23,8 +22,8 @@ dependencies:
 trust:
   verification_status: verified
   publisher:
-    name: Model Context Protocol Team
-    url: https://github.com/modelcontextprotocol
+    name: GitHub / Model Context Protocol Team
+    url: https://github.com/github
     declared_verified: true
   allowed_executables:
     - npx
@@ -32,6 +31,7 @@ tags:
   - github
   - mcp
   - git
+  - developer-tools
 handler_spec:
   mcp:
     transport: stdio
@@ -41,4 +41,4 @@ handler_spec:
       - name: GITHUB_PERSONAL_ACCESS_TOKEN
         required: true
         secret: true
-        description: GitHub PAT with repo access
+        description: GitHub Personal Access Token with repository access
