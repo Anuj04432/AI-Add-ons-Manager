@@ -1,0 +1,39 @@
+id: superpowers
+name: Superpowers Agentic Skills Framework
+version: 1.0.0
+description: Engineering-grade agentic skills framework enforcing brainstorming, structured planning, git worktree isolation, TDD, and code review.
+documentation_url: https://github.com/obra/superpowers
+license: MIT
+category: workflow
+integration_type: plugin
+target_agents:
+  - "*"
+supported_scopes:
+  - global
+  - workspace
+source:
+  source_type: git
+  url: https://github.com/obra/superpowers.git
+  ref: v1.0.0
+  commit_sha: 1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b
+dependencies: []
+trust:
+  verification_status: verified
+  publisher:
+    name: Jesse Vincent (@obra)
+    url: https://github.com/obra
+    declared_verified: true
+tags:
+  - superpowers
+  - tdd
+  - workflow
+  - plugin
+  - engineering-practices
+handler_spec:
+  plugin:
+    components:
+      - superpowers-brainstorming
+      - superpowers-planning
+      - superpowers-worktree
+      - superpowers-tdd
+      - superpowers-review
