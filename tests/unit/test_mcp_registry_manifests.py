@@ -257,3 +257,32 @@ def test_dev_starter_stack_model_validation() -> None:
     assert "github-mcp" in stack.addons
     assert "context7-mcp" in stack.addons
     assert "playwright-mcp" in stack.addons
+
+
+def test_agent_behavior_stack_file_parses_correctly() -> None:
+    """Verify agent-behavior-stack.yaml parses via parse_stack_file and resolves the 3 skill IDs."""
+    stack_path = STACKS_DIR / "agent-behavior-stack.yaml"
+    assert stack_path.exists(), "registry/stacks/agent-behavior-stack.yaml must exist"
+
+    items = parse_stack_file(stack_path)
+    assert len(items) == 3
+    addon_ids = [addon_id for addon_id, _ in items]
+    assert addon_ids == [
+        "karpathy-behavioral-skill",
+        "vibesec-skill",
+        "skill-creator",
+    ]
+
+
+def test_agent_behavior_stack_model_validation() -> None:
+    """Verify AddonStack Pydantic model directly validates agent-behavior-stack.yaml."""
+    stack_path = STACKS_DIR / "agent-behavior-stack.yaml"
+    raw_dict = yaml.safe_load(stack_path.read_text(encoding="utf-8"))
+
+    stack = AddonStack.model_validate(raw_dict)
+    assert stack.name == "Agent Behavior & Safety Stack"
+    assert len(stack.addons) == 3
+    assert "karpathy-behavioral-skill" in stack.addons
+    assert "vibesec-skill" in stack.addons
+    assert "skill-creator" in stack.addons
+

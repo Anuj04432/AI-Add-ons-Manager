@@ -1,0 +1,7 @@
+version: "1.0"
+name: Agent Behavior & Safety Stack
+description: Curated bundle establishing disciplined engineering behavior, vulnerability prevention, and meta-skill scaffolding for AI coding agents.
+addons:
+  - karpathy-behavioral-skill
+  - vibesec-skill
+  - skill-creator
