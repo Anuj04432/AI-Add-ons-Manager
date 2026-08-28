@@ -1,0 +1,34 @@
+id: karpathy-behavioral-skill
+name: Karpathy Behavioral Guidelines Skill
+version: 1.0.0
+description: Agent behavioral guardrails enforcing explicit assumptions, simplicity first, and surgical changes without speculative abstractions.
+documentation_url: https://github.com/forrestchang/andrej-karpathy-skills
+license: MIT
+category: productivity
+integration_type: skill
+target_agents:
+  - "*"
+supported_scopes:
+  - global
+  - workspace
+source:
+  source_type: git
+  url: https://github.com/forrestchang/andrej-karpathy-skills.git
+  ref: main
+  commit_sha: 3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d
+dependencies: []
+trust:
+  verification_status: verified
+  publisher:
+    name: Forrest Chang
+    url: https://github.com/forrestchang
+    declared_verified: true
+tags:
+  - karpathy
+  - behavioral
+  - guardrails
+  - clean-code
+  - simplicity
+handler_spec:
+  skill:
+    skill_file: SKILL.md
