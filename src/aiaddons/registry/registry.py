@@ -40,6 +40,34 @@ class Registry:
         return mgr.get_registry()
 
     @classmethod
+    def find_default_registry_dir(cls, start_path: Path | None = None) -> Path | None:
+        """Find local registry directory by searching start_path, cwd, and package parents."""
+        candidates: list[Path] = []
+        if start_path is not None:
+            candidates.extend([start_path / "registry" / "addons", start_path / "registry", start_path])
+
+        cwd = Path.cwd()
+        candidates.extend([cwd / "registry" / "addons", cwd / "registry"])
+        for parent in cwd.parents:
+            candidates.extend([parent / "registry" / "addons", parent / "registry"])
+
+        pkg_file = Path(__file__).resolve()
+        for parent in pkg_file.parents:
+            candidates.extend([parent / "registry" / "addons", parent / "registry"])
+
+        for candidate in candidates:
+            if candidate.exists() and candidate.is_dir():
+                if any(candidate.glob("*.yaml")) or any(candidate.glob("*.yml")) or any(candidate.glob("*.json")):
+                    return candidate
+                addons_sub = candidate / "addons"
+                if addons_sub.exists() and addons_sub.is_dir() and (
+                    any(addons_sub.glob("*.yaml")) or any(addons_sub.glob("*.yml")) or any(addons_sub.glob("*.json"))
+                ):
+                    return addons_sub
+
+        return None
+
+    @classmethod
     def load_auto(
         cls,
         custom_dir: Path | None = None,
@@ -50,7 +78,7 @@ class Registry:
         Priority:
         1. Explicit custom_dir (if provided and exists)
         2. Local registry cache (if valid cache file exists)
-        3. Fallback local registry directory (cwd / 'registry' / 'addons')
+        3. Fallback local registry directory (cwd or package parents / 'registry' / 'addons')
         Returns (Registry, source_description).
         """
         if custom_dir is not None and custom_dir.exists() and custom_dir.is_dir():
@@ -63,8 +91,8 @@ class Registry:
             return cached_reg, "cache"
 
         # Fallback to local codebase directory if it exists
-        default_dir = Path.cwd() / "registry" / "addons"
-        if default_dir.exists() and default_dir.is_dir():
+        default_dir = cls.find_default_registry_dir(custom_dir)
+        if default_dir is not None and default_dir.exists() and default_dir.is_dir():
             reg, _ = cls.from_directory(default_dir)
             return reg, f"directory:{default_dir}"
 
