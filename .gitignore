@@ -10,3 +10,9 @@ wheels/
 .venv
 
 uv.lock
+
+# Agent configs & workspace local data
+.claude.json
+.claude/
+.agents/
+.codex/
