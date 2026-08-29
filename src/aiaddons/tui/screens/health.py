@@ -70,8 +70,11 @@ class HealthScreen(Screen[None]):
     }
 
     #health-action-bar {
-        height: auto;
-        padding: 1;
+        height: 3;
+        width: 100%;
+        padding: 0 1;
+        border-top: solid $primary;
+        background: $surface;
         align: right middle;
     }
 
