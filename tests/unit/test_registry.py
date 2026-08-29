@@ -315,3 +315,50 @@ def test_registry_index_operations(tmp_path: Path) -> None:
     assert len(registry.search("github")) == 1
     assert len(registry.filter_by_type(IntegrationType.MCP)) == 1
     assert len(registry.filter_by_agent("claude-code")) == 1
+
+
+def test_registry_find_default_and_load_auto(tmp_path: Path) -> None:
+    """Test find_default_registry_dir locates manifests and load_auto resolves cleanly."""
+    reg_dir = tmp_path / "custom_reg"
+    reg_dir.mkdir(parents=True, exist_ok=True)
+    manifest_file = reg_dir / "sample.yaml"
+    manifest_file.write_text(
+        """id: sample-addon
+name: Sample Addon
+version: 1.0.0
+description: Sample manifest
+license: MIT
+category: developer-tools
+integration_type: mcp
+target_agents: [claude-code]
+source:
+  source_type: package
+  package_name: sample-pkg
+  checksum: sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
+trust:
+  publisher:
+    name: Sample Publisher
+handler_spec:
+  mcp:
+    runtime: npx
+    package_name: sample-pkg
+""",
+        encoding="utf-8",
+    )
+
+    # 1. Custom directory provided
+    reg, src = Registry.load_auto(custom_dir=reg_dir)
+    assert reg.count() == 1
+    assert "directory:" in src
+    assert reg.get("sample-addon") is not None
+
+    # 2. find_default_registry_dir with start_path
+    found_dir = Registry.find_default_registry_dir(start_path=tmp_path)
+    assert found_dir is not None
+    assert found_dir.exists()
+
+    # 3. Fallback to bundled codebase directory
+    default_dir = Registry.find_default_registry_dir()
+    assert default_dir is not None
+    assert default_dir.exists()
+

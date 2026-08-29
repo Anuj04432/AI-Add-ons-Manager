@@ -79,13 +79,13 @@ def isolate_aiaddons_environment(
     monkeypatch.chdir(fake_workspace)
 
     # 5. Guard atomic file writers in state modules against real paths
-    import aiaddons.state.lockfile
-    import aiaddons.state.store
-    import aiaddons.state.transaction
+    import aiaddons.state.lockfile as lockfile_mod
+    import aiaddons.state.store as store_mod
+    import aiaddons.state.transaction as tx_mod
 
-    orig_store_atomic = aiaddons.state.store._atomic_write_file
-    orig_lock_atomic = aiaddons.state.lockfile._atomic_write_file
-    orig_tx_atomic = aiaddons.state.transaction._atomic_write_file
+    orig_store_atomic = store_mod._atomic_write_file
+    orig_lock_atomic = lockfile_mod._atomic_write_file
+    orig_tx_atomic = tx_mod._atomic_write_file
 
     def guarded_store_atomic(dir_path: Path, filename: str, content: str) -> Path:
         target = Path(dir_path) / filename
@@ -102,9 +102,9 @@ def isolate_aiaddons_environment(
         _verify_safe_write_path(target)
         return orig_tx_atomic(dir_path, filename, content)
 
-    monkeypatch.setattr(aiaddons.state.store, "_atomic_write_file", guarded_store_atomic)
-    monkeypatch.setattr(aiaddons.state.lockfile, "_atomic_write_file", guarded_lock_atomic)
-    monkeypatch.setattr(aiaddons.state.transaction, "_atomic_write_file", guarded_tx_atomic)
+    monkeypatch.setattr(store_mod, "_atomic_write_file", guarded_store_atomic)
+    monkeypatch.setattr(lockfile_mod, "_atomic_write_file", guarded_lock_atomic)
+    monkeypatch.setattr(tx_mod, "_atomic_write_file", guarded_tx_atomic)
 
     # Track real state modification timestamps before test
     real_state_file = REAL_AIADDONS_DIR / "state.json"
