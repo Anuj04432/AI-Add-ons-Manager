@@ -115,9 +115,18 @@ class AIAddonsTUIApp(App[None]):
     }
 
     #action-bar {
-        height: auto;
-        margin-top: 1;
+        height: 3;
+        width: 100%;
         align: right middle;
+        padding: 0 1;
+        border-top: solid $primary;
+        background: $surface;
+    }
+
+    #action-bar Button {
+        min-width: 8;
+        padding: 0 1;
+        margin-left: 1;
     }
 
     Button {
@@ -137,7 +146,7 @@ class AIAddonsTUIApp(App[None]):
         super().__init__()
         self.workspace_dir = (workspace_dir or Path.cwd()).resolve()
         self.store_dir = store_dir or (Path.home() / ".aiaddons")
-        self.registry_dir = registry_dir or self._default_registry_dir()
+        self.registry_dir = registry_dir
         self.registry: Registry | None = None
         self.manifests: list[IntegrationManifest] = []
         self.selected_manifest: IntegrationManifest | None = None
@@ -150,14 +159,8 @@ class AIAddonsTUIApp(App[None]):
         self.resolved_secrets: dict[str, str] = {}
 
     @staticmethod
-    def _default_registry_dir() -> Path:
-        addons_dir = Path.cwd() / "registry" / "addons"
-        if addons_dir.exists():
-            return addons_dir
-        reg_dir = Path.cwd() / "registry"
-        if reg_dir.exists():
-            return reg_dir
-        return Path("registry")
+    def _default_registry_dir() -> Path | None:
+        return Registry.find_default_registry_dir()
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -172,19 +175,17 @@ class AIAddonsTUIApp(App[None]):
                 yield Markdown(id="detail-view", markdown="Select an add-on from the list.")
                 with Vertical(id="secrets-container"):
                     yield Label(id="secrets-label", content="")
-                with Horizontal(id="action-bar"):
-                    yield Button("Check Compat [C]", id="btn-compat", variant="default")
-                    yield Button("Preview Plan [P]", id="btn-plan", variant="default")
-                    yield Button("Install [I]", id="btn-confirm", variant="primary", disabled=True)
-                    yield Button("Remove [R]", id="btn-remove", variant="error", disabled=True)
-                    yield Button("Update [U]", id="btn-update", variant="warning", disabled=True)
-                    yield Button("Health [H]", id="btn-health", variant="default")
-                    yield Button("Sync [S]", id="btn-sync", variant="default")
+        with Horizontal(id="action-bar"):
+            yield Button("Check Compat [C]", id="btn-compat", variant="default")
+            yield Button("Preview Plan [P]", id="btn-plan", variant="default")
+            yield Button("Install [I]", id="btn-confirm", variant="primary", disabled=True)
+            yield Button("Remove [R]", id="btn-remove", variant="error", disabled=True)
+            yield Button("Update [U]", id="btn-update", variant="warning", disabled=True)
         yield Footer()
 
     def on_mount(self) -> None:
         """Initialize registry and agent detection on app startup."""
-        if self.registry_dir.exists():
+        if self.registry_dir is not None and self.registry_dir.exists() and self.registry_dir.is_dir():
             self.registry, _ = Registry.from_directory(self.registry_dir)
         else:
             self.registry, _ = Registry.load_auto(custom_dir=self.registry_dir)
@@ -604,13 +605,13 @@ class AIAddonsTUIApp(App[None]):
                 force=False,
             )
             ops_desc = [op.description for op in rem_plan.planned_operations]
-            modal = RemoveConfirmModal(
+            remove_modal = RemoveConfirmModal(
                 manifest=self.selected_manifest,
                 agent_name=self.selected_agent.name,
                 scope=self.selected_scope.value,
                 planned_ops=ops_desc,
             )
-            self.push_screen(modal, callback=self._handle_remove_confirm_result)
+            self.push_screen(remove_modal, callback=self._handle_remove_confirm_result)
 
     def _handle_drift_confirm_result(self, confirmed: bool | None) -> None:
         if confirmed:
@@ -790,8 +791,9 @@ class AIAddonsTUIApp(App[None]):
                 item = update_plan.items[0] if update_plan.items else None
                 new_ver = item.target_version if item else "latest"
                 old_ver = item.current_version if item else ""
+                addon_name = self.selected_manifest.name if self.selected_manifest else (item.addon_id if item else "Unknown")
                 md = "## Update Successful! 🔄\n\n"
-                md += f"**Add-on:** {self.selected_manifest.name if self.selected_manifest else item.addon_id}\n"
+                md += f"**Add-on:** {addon_name}\n"
                 md += f"**Updated:** `v{old_ver}` → `v{new_ver}`\n"
                 md += f"**Target Agent:** {self.selected_agent.name}\n\n"
                 md += "All removal and installation operations were committed atomically.\n"
