@@ -53,7 +53,7 @@ from tests.fixtures.ponytail_manifests import (
 
 def test_ponytail_real_registry_files_load_and_validate() -> None:
     """Verify that actual ponytail YAML files in registry/addons/ pass strict validation."""
-    addons_dir = Path("registry/addons")
+    addons_dir = Path(__file__).resolve().parents[2] / "registry" / "addons"
     loader = RegistryLoader()
 
     ponytail_main = loader.load_file(addons_dir / "ponytail.yaml")

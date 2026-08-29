@@ -72,7 +72,7 @@ def isolated_env(tmp_path: Path) -> EnvTuple:
 @pytest.fixture
 def registry_with_ponytail() -> Registry:
     loader = RegistryLoader()
-    addons_dir = Path("registry/addons")
+    addons_dir = Path(__file__).resolve().parents[2] / "registry" / "addons"
     manifests: dict[str, IntegrationManifest] = {}
     for yml in addons_dir.glob("*.yaml"):
         try:
@@ -549,7 +549,7 @@ def test_cli_install_and_doctor_ponytail_consistency(
     ws_dir = tmp_path / "ws"
     ws_dir.mkdir(parents=True)
 
-    reg_path = Path("registry").resolve()
+    reg_path = (Path(__file__).resolve().parents[2] / "registry").resolve()
     monkeypatch.setattr(Path, "home", lambda: home_dir)
     monkeypatch.chdir(ws_dir)
 

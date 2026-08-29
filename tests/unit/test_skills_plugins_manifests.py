@@ -15,7 +15,8 @@ from aiaddons.registry.loader import RegistryLoader
 from aiaddons.registry.registry import Registry
 
 
-MANIFESTS_DIR = Path("registry/addons")
+REPO_ROOT = Path(__file__).resolve().parents[2]
+MANIFESTS_DIR = REPO_ROOT / "registry" / "addons"
 
 
 @pytest.fixture

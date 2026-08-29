@@ -16,8 +16,9 @@ from aiaddons.core.models.stack import AddonStack, parse_stack_file
 from aiaddons.registry.loader import RegistryLoader
 
 
-MANIFESTS_DIR = Path("registry/addons")
-STACKS_DIR = Path("registry/stacks")
+REPO_ROOT = Path(__file__).resolve().parents[2]
+MANIFESTS_DIR = REPO_ROOT / "registry" / "addons"
+STACKS_DIR = REPO_ROOT / "registry" / "stacks"
 
 
 @pytest.fixture
