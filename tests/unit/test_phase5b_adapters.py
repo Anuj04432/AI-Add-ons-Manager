@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
+from aiaddons.agents.antigravity import AntigravityAdapter
 from aiaddons.agents.claude_code import ClaudeCodeAdapter
 from aiaddons.agents.codex import CodexAdapter
 from aiaddons.agents.manager import AgentDetectionManager
@@ -26,7 +27,7 @@ def sample_mcp_manifest() -> IntegrationManifest:
             "license": "MIT",
             "category": "developer-tools",
             "integration_type": "mcp",
-            "target_agents": ["claude-code", "codex"],
+            "target_agents": ["claude-code", "codex", "antigravity"],
             "supported_scopes": ["global", "workspace"],
             "source": {
                 "source_type": "package",
@@ -54,11 +55,14 @@ def test_agent_detection_manager_adapter_lookup() -> None:
     manager = AgentDetectionManager()
     claude = manager.get_adapter("claude-code")
     codex = manager.get_adapter("codex")
+    antigravity = manager.get_adapter("antigravity")
 
     assert claude is not None
     assert claude.agent_id == "claude-code"
     assert codex is not None
     assert codex.agent_id == "codex"
+    assert antigravity is not None
+    assert antigravity.agent_id == "antigravity"
     assert manager.get_adapter("nonexistent") is None
 
 
@@ -132,6 +136,52 @@ def test_codex_workspace_installation_transaction(
 ) -> None:
     """Verify OpenAI Codex workspace installation flow using transaction and execution engine."""
     adapter = CodexAdapter()
+    detection = adapter.detect(project_path=tmp_path)
+    detection.installed = True
+
+    engine = InstallationEngine()
+    plan = engine.generate_plan(sample_mcp_manifest, detection, Scope.WORKSPACE)
+    assert plan.target_scope == Scope.WORKSPACE
+
+    for op in plan.planned_operations:
+        op.target_root = str(tmp_path)
+
+    exec_engine = ExecutionEngine()
+    with patch.object(exec_engine.external_runner, "execute") as mock_exec:
+        mock_exec.return_value.success = True
+        mock_exec.return_value.return_code = 0
+        mock_exec.return_value.stdout = "Installed"
+        mock_exec.return_value.stderr = ""
+
+        res = exec_engine.execute_plan(plan, dry_run=False)
+        assert res.status == ExecutionStatus.SUCCESS
+
+
+def test_antigravity_global_and_workspace_paths(tmp_path: Path) -> None:
+    """Verify Antigravity adapter returns correct config and skill paths."""
+    adapter = AntigravityAdapter()
+
+    global_cfg = adapter.get_config_path(Scope.GLOBAL)
+    assert global_cfg is not None
+    assert ".gemini" in str(global_cfg)
+    assert "mcp_config.json" in str(global_cfg)
+
+    global_skill = adapter.get_skill_directory(Scope.GLOBAL)
+    assert str(global_skill).replace("\\", "/").endswith(".gemini/config/skills")
+
+    ws_cfg = adapter.get_config_path(Scope.WORKSPACE, project_path=tmp_path)
+    assert ws_cfg is not None
+    assert str(ws_cfg) == str(tmp_path / ".agents" / "mcp_config.json")
+
+    ws_skill = adapter.get_skill_directory(Scope.WORKSPACE, project_path=tmp_path)
+    assert str(ws_skill) == str(tmp_path / ".agents" / "skills")
+
+
+def test_antigravity_workspace_installation_transaction(
+    tmp_path: Path, sample_mcp_manifest: IntegrationManifest
+) -> None:
+    """Verify Antigravity workspace installation flow using transaction and execution engine."""
+    adapter = AntigravityAdapter()
     detection = adapter.detect(project_path=tmp_path)
     detection.installed = True
 
