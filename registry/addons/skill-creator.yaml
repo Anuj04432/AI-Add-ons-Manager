@@ -9,6 +9,7 @@ integration_type: skill
 target_agents:
   - claude-code
   - codex
+  - antigravity
 supported_scopes:
   - global
   - workspace
