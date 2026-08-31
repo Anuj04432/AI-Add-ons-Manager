@@ -40,7 +40,8 @@ def agents_command(
 
     if json_output:
         serialized = {k: v.model_dump() for k, v in results.items()}
-        console.print(json.dumps(serialized, indent=2))
+        sys.stdout.write(json.dumps(serialized, indent=2) + "\n")
+        sys.stdout.flush()
         return
 
     console.print("\n[bold cyan]AI Coding Agents[/bold cyan]\n")

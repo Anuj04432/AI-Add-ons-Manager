@@ -173,7 +173,7 @@ def sync_command(
         None,
         "--agent",
         "-a",
-        help="Target agent ID (e.g. 'claude-code' or 'codex')",
+        help="Target agent ID (e.g. 'claude-code', 'codex', or 'antigravity')",
     ),
     registry_path: Path | None = typer.Option(
         None,

@@ -69,7 +69,8 @@ def check_command(
 
     if json_output:
         serialized = [r.model_dump() for r in results]
-        console.print(json.dumps(serialized, indent=2))
+        sys.stdout.write(json.dumps(serialized, indent=2) + "\n")
+        sys.stdout.flush()
         return
 
     sym_ok, sym_fail = _get_symbols()
