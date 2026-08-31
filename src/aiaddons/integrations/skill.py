@@ -22,11 +22,13 @@ def get_skill_target_directory(agent_id: str, scope: Scope) -> str:
             return ".claude/skills"
         if aid == "codex":
             return ".codex/skills"
+        if aid in ("antigravity", "agy"):
+            return ".gemini/config/skills"
         return f".aiaddons/skills/{aid}"
     else:
         if aid in ("claude-code", "claude"):
             return ".claude/skills"
-        if aid == "codex":
+        if aid in ("codex", "antigravity", "agy"):
             return ".agents/skills"
         return ".agents/skills"
 
