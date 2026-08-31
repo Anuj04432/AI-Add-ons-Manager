@@ -21,12 +21,12 @@ from aiaddons.core.installer.models import (
 )
 from aiaddons.core.models.agent import AgentDetectionResult, Scope
 from aiaddons.core.models.manifest import IntegrationManifest, IntegrationType
- 
+from aiaddons.state.transaction import TransactionWALManager
+
 if TYPE_CHECKING:
     from aiaddons.integrations.base import BaseIntegrationInstaller
     from aiaddons.registry.registry import Registry
     from aiaddons.state.store import InstalledAddonRecord
-    from aiaddons.state.transaction import TransactionWALManager
 
 
 class InstallationEngine:
