@@ -10,7 +10,7 @@ from rich.table import Table
 from aiaddons.core.exceptions import AIAddonsError
 from aiaddons.core.models.manifest import IntegrationType
 from aiaddons.registry.cache import RegistryCacheManager
-from aiaddons.registry.client import RegistryClient
+from aiaddons.registry.client import DEFAULT_REGISTRY_URL, RegistryClient
 from aiaddons.registry.registry import Registry
 
 console = Console()
@@ -244,12 +244,22 @@ def info_command(
     console.print()
 
 
+def _get_symbols() -> tuple[str, str]:
+    """Return platform and encoding safe status symbols."""
+    import sys
+    try:
+        "✓".encode(sys.stdout.encoding or "utf-8")
+        return "✓", "✗"
+    except Exception:
+        return "+", "-"
+
+
 def registry_update_command(
-    registry_url: str | None = typer.Option(
-        None,
+    registry_url: str = typer.Option(
+        DEFAULT_REGISTRY_URL,
         "--url",
         "-u",
-        help="Custom registry URL to fetch metadata from.",
+        help="Registry index endpoint URL to fetch from.",
     ),
     cache_dir: Path | None = typer.Option(
         None,
@@ -258,18 +268,19 @@ def registry_update_command(
     ),
 ) -> None:
     """Synchronize add-on registry metadata from trusted remote endpoint."""
+    sym_ok, _ = _get_symbols()
     console.print("[bold cyan]Updating registry...[/bold cyan]")
     try:
         client = RegistryClient(registry_url=registry_url)
         console.print(f"Connecting to [yellow]{client.registry_url}[/yellow]...")
         index = client.fetch_registry()
-        console.print("  [green]✓[/green] Downloaded registry metadata")
-        console.print(f"  [green]✓[/green] Schema validated (v{index.schema_version})")
-        console.print(f"  [green]✓[/green] {len(index.manifests)} add-ons validated")
+        console.print(f"  [green]{sym_ok}[/green] Downloaded registry metadata")
+        console.print(f"  [green]{sym_ok}[/green] Schema validated (v{index.schema_version})")
+        console.print(f"  [green]{sym_ok}[/green] {len(index.manifests)} add-ons validated")
 
         cache_mgr = RegistryCacheManager(cache_dir=cache_dir)
         saved_path = cache_mgr.save_cache(index)
-        console.print(f"  [green]✓[/green] Registry cache updated at [dim]{saved_path}[/dim]")
+        console.print(f"  [green]{sym_ok}[/green] Registry cache updated at [dim]{saved_path}[/dim]")
         console.print("[bold green]Registry update complete.[/bold green]")
     except AIAddonsError as err:
         console.print(f"[bold red]Registry update failed:[/bold red] {err}")

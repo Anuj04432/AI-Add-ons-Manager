@@ -589,7 +589,7 @@ def sync_command(
         _print_json(formatted)
     else:
         console.print()
-        console.print("[bold green]✓ Synchronization completed successfully![/bold green]")
+        console.print(f"[bold green]{sym_ok} Synchronization completed successfully![/bold green]")
         if sync_result.installed_addons:
             console.print(f"  [green]+ Installed:[/green] {', '.join(sync_result.installed_addons)}")
         if sync_result.pruned_addons:

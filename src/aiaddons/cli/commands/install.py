@@ -905,12 +905,12 @@ def install_command(
 
             if len(uninstalled_manifests) == 1:
                 console.print(
-                    f"[bold green]✓ Successfully installed {uninstalled_manifests[0].name} for "
+                    f"[bold green]{sym_ok} Successfully installed {uninstalled_manifests[0].name} for "
                     f"{target_agent.name}[/bold green]"
                 )
             else:
                 console.print(
-                    f"[bold green]✓ Successfully installed {len(uninstalled_manifests)} add-on(s) for "
+                    f"[bold green]{sym_ok} Successfully installed {len(uninstalled_manifests)} add-on(s) for "
                     f"{target_agent.name}[/bold green]"
                 )
 
