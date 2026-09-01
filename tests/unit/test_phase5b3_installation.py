@@ -350,16 +350,9 @@ def test_failed_external_runner_triggers_rollback(
     plan.planned_operations[0].target_root = str(tmp_path)
 
     mock_runner = MagicMock()
-    mock_runner.execute.return_value = ExternalExecutionResult(
-        success=False,
-        runtime=ExternalRuntime.NPX,
-        executable_path="/usr/bin/npx",
-        command_vector=["npx", "-y", "@modelcontextprotocol/server-github"],
-        return_code=1,
-        stdout="",
-        stderr="Network connection failed",
-        error_message="Network connection failed",
-        duration=0.1,
+    from aiaddons.core.exceptions import ExecutableNotFoundError
+    mock_runner.resolve_executable.side_effect = ExecutableNotFoundError(
+        "Approved runtime executable 'npx' not found on system PATH."
     )
 
     exec_engine = ExecutionEngine(external_runner=mock_runner)

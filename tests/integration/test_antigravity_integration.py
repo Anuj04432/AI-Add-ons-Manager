@@ -125,42 +125,27 @@ def test_antigravity_mcp_install_and_remove_cycle(
 
     monkeypatch.chdir(workspace_dir)
 
-    from aiaddons.core.execution.external.models import ExternalExecutionResult, ExternalRuntime
-    from unittest.mock import patch
+    # 1. Install MCP server for antigravity without mocking ExternalRunner.execute
+    install_res = runner.invoke(
+        app,
+        [
+            "install",
+            "test-db-mcp",
+            "--agent",
+            "antigravity",
+            "--scope",
+            "workspace",
+            "--registry",
+            str(reg_dir),
+            "--yes",
+            "--json",
+        ],
+    )
 
-    with patch("aiaddons.core.execution.external.runner.ExternalRunner.execute") as mock_ext:
-        mock_ext.return_value = ExternalExecutionResult(
-            success=True,
-            runtime=ExternalRuntime.NPX,
-            executable_path="npx",
-            command_vector=["npx", "-y", "@test/db-mcp"],
-            return_code=0,
-            stdout="Installed OK",
-            stderr="",
-            duration=0.2,
-        )
-
-        # 1. Install MCP server for antigravity
-        install_res = runner.invoke(
-            app,
-            [
-                "install",
-                "test-db-mcp",
-                "--agent",
-                "antigravity",
-                "--scope",
-                "workspace",
-                "--registry",
-                str(reg_dir),
-                "--yes",
-                "--json",
-            ],
-        )
-
-        assert install_res.exit_code == 0, f"Install failed: {install_res.stdout}"
-        install_data = json.loads(install_res.stdout)
-        assert install_data["success"] is True
-        assert install_data["agent"] == "antigravity"
+    assert install_res.exit_code == 0, f"Install failed: {install_res.stdout}"
+    install_data = json.loads(install_res.stdout)
+    assert install_data["success"] is True
+    assert install_data["agent"] == "antigravity"
 
     # Verify config file written
     assert mcp_config_file.exists()
@@ -345,3 +330,108 @@ def test_antigravity_skill_install_and_remove_cycle(
     # Verify skill directory was removed
     assert not installed_skill_file.exists()
     assert not (agents_dir / "skills" / "test-guidelines-skill").exists()
+
+
+def test_real_stdio_mcp_server_install_does_not_launch_daemon(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression test: installing a real stdio MCP server manifest does not attempt to launch the server binary and completes in milliseconds."""
+    import time
+    from unittest.mock import patch
+
+    workspace_dir = tmp_path / "workspace"
+    workspace_dir.mkdir(parents=True, exist_ok=True)
+    agents_dir = workspace_dir / ".agents"
+    agents_dir.mkdir(parents=True, exist_ok=True)
+    mcp_config_file = agents_dir / "mcp_config.json"
+    mcp_config_file.write_text("{}", encoding="utf-8")
+
+    state_dir = tmp_path / ".aiaddons"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    wal_dir = state_dir / "transactions"
+    wal_dir.mkdir(parents=True, exist_ok=True)
+
+    state_store = InstalledStateStore(store_dir=state_dir)
+    wal_mgr = TransactionWALManager(transactions_dir=wal_dir)
+
+    monkeypatch.setattr(
+        "aiaddons.cli.commands.install.InstalledStateStore",
+        lambda *args, **kwargs: state_store,
+    )
+    monkeypatch.setattr(
+        "aiaddons.cli.commands.install.TransactionWALManager",
+        lambda *args, **kwargs: wal_mgr,
+    )
+    monkeypatch.setattr(
+        "aiaddons.core.execution.engine.TransactionWALManager",
+        lambda *args, **kwargs: wal_mgr,
+    )
+    monkeypatch.setattr(
+        "aiaddons.core.installer.engine.TransactionWALManager",
+        lambda *args, **kwargs: wal_mgr,
+    )
+
+    fake_detection = AgentDetectionResult(
+        agent_id="antigravity",
+        name="Antigravity CLI",
+        installed=True,
+        version="1.0.0",
+        workspace_config_path=str(mcp_config_file),
+        config_path=str(mcp_config_file),
+        capabilities=[AgentCapability.MCP, AgentCapability.SKILL],
+    )
+
+    class MockDetectionManager:
+        def detect_agents(self, project_path: Path | None = None) -> dict[str, AgentDetectionResult]:
+            return {"antigravity": fake_detection}
+
+        def get_adapter(self, agent_id: str):
+            if agent_id == "antigravity":
+                return AntigravityAdapter()
+            return None
+
+    monkeypatch.setattr(
+        "aiaddons.cli.commands.install.AgentDetectionManager",
+        MockDetectionManager,
+    )
+    monkeypatch.chdir(workspace_dir)
+
+    real_registry_path = Path(__file__).parent.parent.parent / "registry"
+
+    with patch("aiaddons.core.execution.external.runner.ExternalRunner.execute") as mock_exec:
+        t0 = time.perf_counter()
+        install_res = runner.invoke(
+            app,
+            [
+                "install",
+                "filesystem-mcp",
+                "--agent",
+                "antigravity",
+                "--scope",
+                "workspace",
+                "--registry",
+                str(real_registry_path),
+                "--yes",
+                "--json",
+            ],
+        )
+        elapsed = time.perf_counter() - t0
+
+        # Subprocess execute must NEVER have been called
+        assert mock_exec.call_count == 0, "ExternalRunner.execute must not be called during MCP install!"
+        # Execution must complete quickly in well under 5 seconds (not 120s timeout)
+        assert elapsed < 5.0, f"MCP install took {elapsed:.2f}s, expected < 5s"
+        assert install_res.exit_code == 0, f"Install failed: {install_res.stdout}"
+        install_data = json.loads(install_res.stdout)
+        assert install_data["success"] is True
+
+    # Verify configuration written accurately
+    assert mcp_config_file.exists()
+    config_content = json.loads(mcp_config_file.read_text(encoding="utf-8"))
+    assert "mcpServers" in config_content
+    assert "filesystem-mcp" in config_content["mcpServers"]
+    assert config_content["mcpServers"]["filesystem-mcp"]["command"] == "npx"
+    assert config_content["mcpServers"]["filesystem-mcp"]["args"] == [
+        "@modelcontextprotocol/server-filesystem",
+    ]
+

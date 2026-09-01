@@ -149,12 +149,15 @@ def test_secret_isolation_only_declared_passed(tmp_path: Path) -> None:
     res = engine.execute_plan(plan, dry_run=False, secret_values=all_resolved_secrets)
     assert res.status.value == "success"
 
-    # Verify ExternalRunner call
-    mock_runner.execute.assert_called_once()
-    req: ExternalExecutionRequest = mock_runner.execute.call_args[0][0]
-    assert "GITHUB_TOKEN" in req.env_vars
-    assert req.env_vars["GITHUB_TOKEN"] == "ghp_secret_token"
-    assert "UNRELATED_SECRET" not in req.env_vars
+    # Verify secret isolation in written MCP configuration
+    mcp_file = tmp_path / "mcp.json"
+    assert mcp_file.exists()
+    import json
+    cfg = json.loads(mcp_file.read_text(encoding="utf-8"))
+    assert "github" in cfg.get("mcpServers", {})
+    env_cfg = cfg["mcpServers"]["github"].get("env", {})
+    assert "GITHUB_TOKEN" in env_cfg
+    assert "UNRELATED_SECRET" not in env_cfg
 
 
 def test_dangerous_environment_variables_blocked() -> None:
@@ -334,7 +337,7 @@ def test_rollback_on_failure_with_masked_logs(tmp_path: Path) -> None:
     secret_value = "ghp_failing_secret_key_123"
 
     mock_runner = MagicMock(spec=ExternalRunner)
-    mock_runner.execute.side_effect = Exception(f"Connection failed with token {secret_value}")
+    mock_runner.resolve_executable.side_effect = Exception(f"Connection failed with token {secret_value}")
 
     engine = ExecutionEngine(external_runner=mock_runner)
 

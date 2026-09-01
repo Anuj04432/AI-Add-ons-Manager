@@ -535,19 +535,10 @@ def test_update_rollback_to_old_version_on_install_failure(tmp_path: Path, monke
         registry=registry,
     )
 
-    # Simulate failure during the installation half (e.g. runner fails on new package)
-    with patch("aiaddons.core.execution.external.runner.ExternalRunner.execute") as mock_runner:
-        mock_runner.return_value = ExternalExecutionResult(
-            success=False,
-            runtime=ExternalRuntime.NPX,
-            executable_path="npx",
-            command_vector=["npx", "-y", "@modelcontextprotocol/server-one-v2"],
-            return_code=1,
-            stdout="",
-            stderr="NPM registry download failed with ETIMEDOUT",
-            duration=0.5,
-            error_message="NPM package installation timed out",
-        )
+    # Simulate failure during the installation half (e.g. runner fails on new package runtime)
+    with patch("aiaddons.core.execution.external.runner.ExternalRunner.resolve_executable") as mock_runner:
+        from aiaddons.core.exceptions import ExecutableNotFoundError
+        mock_runner.side_effect = ExecutableNotFoundError("NPM package installation timed out")
 
         res = update_engine.execute_update(
             plan=plan,

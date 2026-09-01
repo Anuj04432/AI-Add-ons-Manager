@@ -550,32 +550,14 @@ def test_batch_install_rollback_on_execution_failure(tmp_path: Path, monkeypatch
         "aiaddons.cli.commands.install.AgentDetectionManager.detect_agents",
         return_value={"claude-code": agent},
     )
-    mock_runner = patch("aiaddons.core.execution.external.runner.ExternalRunner.execute")
+    mock_runner = patch("aiaddons.core.execution.external.runner.ExternalRunner.resolve_executable")
 
-    with mock_mgr, mock_runner as mock_ext:
+    with mock_mgr, mock_runner as mock_res:
         # First call succeeds, second fails
-        mock_ext.side_effect = [
-            ExternalExecutionResult(
-                success=True,
-                runtime=ExternalRuntime.NPX,
-                executable_path="/usr/bin/npx",
-                command_vector=["npx", "-y", "@modelcontextprotocol/server-one"],
-                return_code=0,
-                stdout="OK",
-                stderr="",
-                duration=0.1,
-            ),
-            ExternalExecutionResult(
-                success=False,
-                runtime=ExternalRuntime.NPX,
-                executable_path="/usr/bin/npx",
-                command_vector=["npx", "-y", "@modelcontextprotocol/server-two"],
-                return_code=1,
-                stdout="",
-                stderr="Package not found error",
-                error_message="Package not found error",
-                duration=0.1,
-            ),
+        from aiaddons.core.exceptions import ExecutableNotFoundError
+        mock_res.side_effect = [
+            Path("/usr/bin/npx"),
+            ExecutableNotFoundError("Approved runtime executable 'npx' not found on system PATH."),
         ]
 
         args = [

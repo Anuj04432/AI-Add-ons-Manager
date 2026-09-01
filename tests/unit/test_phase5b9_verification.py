@@ -312,7 +312,7 @@ def test_mcp_verification_malformed_config(tmp_path: Path) -> None:
     assert "Malformed configuration file" in (check.error_info or "")
 
 
-def test_mcp_verification_plaintext_secret_detected(tmp_path: Path) -> None:
+def test_mcp_verification_secret_matched_success(tmp_path: Path) -> None:
     cfg_path = tmp_path / ".claude.json"
     mcp_config = {
         "mcpServers": {
@@ -337,9 +337,36 @@ def test_mcp_verification_plaintext_secret_detected(tmp_path: Path) -> None:
     )
     sec_dict = {"GITHUB_TOKEN": "ghp_raw_secret_token_value_123"}
     check = engine.verify_operation(op, secret_values=sec_dict)
+    assert check.status == VerificationStatus.PASSED
+
+
+def test_mcp_verification_secret_mismatch_detected(tmp_path: Path) -> None:
+    cfg_path = tmp_path / ".claude.json"
+    mcp_config = {
+        "mcpServers": {
+            "github-mcp": {
+                "command": "npx",
+                "args": ["-y", "@modelcontextprotocol/server-github"],
+                "env": {"GITHUB_TOKEN": "wrong_mismatched_token"},
+            }
+        }
+    }
+    cfg_path.write_text(json.dumps(mcp_config), encoding="utf-8")
+
+    engine = VerificationEngine()
+    op = AddMcpServerOperation(
+        description="Inject GitHub MCP Server",
+        target_root=str(tmp_path),
+        server_name="github-mcp",
+        runtime=MCPRuntime.NPX,
+        package_name="@modelcontextprotocol/server-github",
+        env_var_names=["GITHUB_TOKEN"],
+        config_path=".claude.json",
+    )
+    sec_dict = {"GITHUB_TOKEN": "ghp_raw_secret_token_value_123"}
+    check = engine.verify_operation(op, secret_values=sec_dict)
     assert check.status == VerificationStatus.FAILED
-    assert "Plaintext secret detected" in (check.error_info or "")
-    assert "ghp_raw_secret_token_value_123" not in (check.error_info or "")
+    assert "does not match resolved secret value" in (check.error_info or "")
 
 
 # ============================================================================

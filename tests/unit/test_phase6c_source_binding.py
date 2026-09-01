@@ -466,9 +466,7 @@ def test_phase6c_secret_non_persistence(
     assert tx.plan is not None
 
     mock_runner = MagicMock(spec=ExternalRunner)
-    mock_runner.execute.return_value = create_dummy_external_result(
-        success=False, error_msg="Error containing secret api_key_value_99999"
-    )
+    mock_runner.resolve_executable.side_effect = Exception("Error containing secret api_key_value_99999")
 
     exec_engine = ExecutionEngine(external_runner=mock_runner, wal_manager=wal_manager)
     res = exec_engine.execute_plan(
