@@ -252,8 +252,19 @@ class VerificationEngine:
                     actual_value="Key missing",
                     error_info=f"Key '{op.json_path}' not found in '{op.file_path}'.",
                 )
-            if actual_val != op.value:
-                exp_str = mask_secrets_in_text(str(op.value), secrets_list)
+            expected_op_val = op.value
+            if secret_values and isinstance(op.value, dict):
+                import copy
+                expected_op_val = copy.deepcopy(op.value)
+                if "env" in expected_op_val and isinstance(expected_op_val["env"], dict):
+                    for k, v in list(expected_op_val["env"].items()):
+                        if k in secret_values and secret_values[k] is not None:
+                            expected_op_val["env"][k] = secret_values[k]
+                        elif isinstance(v, str) and v in secret_values and secret_values[v] is not None:
+                            expected_op_val["env"][k] = secret_values[v]
+
+            if actual_val != expected_op_val:
+                exp_str = mask_secrets_in_text(str(expected_op_val), secrets_list)
                 act_str = mask_secrets_in_text(str(actual_val), secrets_list)
                 return VerificationCheck(
                     check_id=check_id,
@@ -267,7 +278,7 @@ class VerificationEngine:
                 check_id=check_id,
                 description=desc,
                 status=VerificationStatus.PASSED,
-                expected_value=mask_secrets_in_text(str(op.value), secrets_list),
+                expected_value=mask_secrets_in_text(str(expected_op_val), secrets_list),
                 actual_value=mask_secrets_in_text(str(actual_val), secrets_list),
             )
 
@@ -416,20 +427,19 @@ class VerificationEngine:
                                 f"MCP server '{op.server_name}' missing env var '{env_name}'."
                             ),
                         )
-                    # Secret protection check
+                    # Secret verification check
                     env_val = str(env_dict[env_name])
                     if secret_values and env_name in secret_values:
                         sec_val = secret_values[env_name]
-                        if sec_val and sec_val in env_val and sec_val != f"${{{env_name}}}":
+                        if sec_val is not None and env_val != sec_val and env_val != f"${{{env_name}}}":
                             return VerificationCheck(
                                 check_id=check_id,
                                 description=desc,
                                 status=VerificationStatus.FAILED,
-                                expected_value=f"${{{env_name}}} reference",
-                                actual_value="Plaintext secret value detected in configuration",
+                                expected_value=f"resolved secret value for '{env_name}'",
+                                actual_value="mismatched secret value in configuration",
                                 error_info=(
-                                    "Security violation: Plaintext secret detected for"
-                                    f" '{env_name}' in config."
+                                    f"MCP server '{op.server_name}' configuration for '{env_name}' does not match resolved secret value."
                                 ),
                             )
 

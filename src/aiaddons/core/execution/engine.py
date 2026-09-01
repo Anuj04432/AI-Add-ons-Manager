@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -1262,7 +1263,23 @@ class ExecutionEngine:
             _, dest = verify_safe_target_path(op.target_root, op.file_path)
             existed = dest.exists()
             backup = dest.read_text(encoding="utf-8") if (existed and dest.is_file()) else None
-            modify_json_primitive(op)
+
+            resolved_value = op.value
+            if secret_values and isinstance(op.value, dict):
+                import copy
+                resolved_value = copy.deepcopy(op.value)
+                if "env" in resolved_value and isinstance(resolved_value["env"], dict):
+                    for k, v in list(resolved_value["env"].items()):
+                        if k in secret_values and secret_values[k] is not None:
+                            resolved_value["env"][k] = secret_values[k]
+                        elif isinstance(v, str) and v in secret_values and secret_values[v] is not None:
+                            resolved_value["env"][k] = secret_values[v]
+                        elif isinstance(v, str) and v.startswith("${") and v.endswith("}") and v[2:-1] in secret_values:
+                            var_key = v[2:-1]
+                            if secret_values[var_key] is not None:
+                                resolved_value["env"][k] = secret_values[var_key]
+            op_to_run = op if resolved_value == op.value else op.model_copy(update={"value": resolved_value})
+            modify_json_primitive(op_to_run)
             return RollbackAction(
                 op_type="json",
                 target_root=op.target_root,
@@ -1298,7 +1315,15 @@ class ExecutionEngine:
                 "args": args_list,
             }
             if op.env_var_names:
-                mcp_val["env"] = {env_name: f"${{{env_name}}}" for env_name in op.env_var_names}
+                env_map: dict[str, str] = {}
+                for env_name in op.env_var_names:
+                    if secret_values and env_name in secret_values and secret_values[env_name] is not None:
+                        env_map[env_name] = secret_values[env_name]
+                    elif env_name in os.environ:
+                        env_map[env_name] = os.environ[env_name]
+                    else:
+                        env_map[env_name] = ""
+                mcp_val["env"] = env_map
 
             rollback_action = RollbackAction(
                 op_type="json",
@@ -1328,21 +1353,8 @@ class ExecutionEngine:
                     MCPRuntime.PYTHON: ExternalRuntime.PYTHON,
                 }
                 ext_runtime = runtime_map.get(op.runtime, ExternalRuntime.NPX)
-                op_env: dict[str, str] = {}
-                if secret_values:
-                    for env_name in op.env_var_names:
-                        if env_name in secret_values:
-                            op_env[env_name] = secret_values[env_name]
-
-                req = ExternalExecutionRequest(
-                    runtime=ext_runtime,
-                    package_name=op.package_name,
-                    env_vars=op_env,
-                )
-                res = self.external_runner.execute(req, dry_run=dry_run)
-                if not res.success:
-                    msg = f"External package operation failed: {res.error_message}"
-                    raise InstallationError(msg)
+                # Validate that the required runtime executable is present on PATH and allowlisted
+                self.external_runner.resolve_executable(ext_runtime)
             except Exception:
                 rollback_action.rollback()
                 raise

@@ -125,7 +125,7 @@ class MCPInstaller(BaseIntegrationInstaller):
         mcp_payload = {
             "command": spec.runtime.value,
             "args": [spec.package_name],
-            "env": {e.name: e.name for e in spec.env_vars},
+            "env": {e.name: "" for e in spec.env_vars},
         }
 
         json_desc = (
