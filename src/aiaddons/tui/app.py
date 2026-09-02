@@ -16,6 +16,7 @@ from textual.widgets import (
     ListItem,
     ListView,
     Markdown,
+    Select,
     Static,
 )
 
@@ -56,6 +57,8 @@ class AIAddonsTUIApp(App[None]):
     BINDINGS = [
         Binding("h", "doctor", "Health Check"),
         Binding("s", "sync", "Sync Workspace"),
+        Binding("a", "cycle_agent", "Switch Agent"),
+        Binding("o", "toggle_scope", "Toggle Scope"),
         Binding("i", "install", "Install"),
         Binding("r", "remove", "Remove"),
         Binding("u", "update", "Update"),
@@ -94,6 +97,37 @@ class AIAddonsTUIApp(App[None]):
         margin-bottom: 1;
     }
 
+    .config-label {
+        color: $accent;
+        text-style: bold;
+        margin-top: 1;
+    }
+
+    #target-config-box {
+        margin-top: 1;
+        margin-bottom: 1;
+        padding: 1;
+        border: solid $secondary;
+        height: auto;
+    }
+
+    #select-agent, #select-scope {
+        width: 100%;
+        margin-bottom: 1;
+    }
+
+    #target-config-buttons {
+        height: auto;
+        margin-top: 1;
+        width: 100%;
+    }
+
+    #target-config-buttons Button {
+        width: 1fr;
+        margin: 0 1;
+        min-width: 6;
+    }
+
     .status-pass {
         color: green;
         text-style: bold;
@@ -105,7 +139,8 @@ class AIAddonsTUIApp(App[None]):
     }
 
     #addon-list {
-        height: 1fr;
+        height: 8;
+        min-height: 4;
         border: solid $primary;
     }
 
@@ -165,11 +200,36 @@ class AIAddonsTUIApp(App[None]):
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         with Container(id="main-container"):
-            with Vertical(id="sidebar"):
+            with VerticalScroll(id="sidebar"):
                 yield Label("Available Add-ons", classes="section-title")
                 yield ListView(id="addon-list")
                 yield Label("Target Configuration", classes="section-title")
                 yield Static(id="config-summary", content="Select an add-on to begin.")
+                with Vertical(id="target-config-box"):
+                    yield Label("Agent Selector [A]:", classes="config-label")
+                    yield Select(
+                        [
+                            ("Claude Code", "claude-code"),
+                            ("Codex", "codex"),
+                            ("Antigravity CLI", "antigravity"),
+                        ],
+                        value="claude-code",
+                        id="select-agent",
+                        allow_blank=False,
+                    )
+                    yield Label("Scope Selector [O]:", classes="config-label")
+                    yield Select(
+                        [
+                            ("Workspace", "workspace"),
+                            ("Global", "global"),
+                        ],
+                        value="workspace",
+                        id="select-scope",
+                        allow_blank=False,
+                    )
+                    with Horizontal(id="target-config-buttons"):
+                        yield Button("Agent [A]", id="btn-switch-agent", variant="default")
+                        yield Button("Scope [O]", id="btn-toggle-scope", variant="default")
             with VerticalScroll(id="content-panel"):
                 yield Label("Add-on Details & Plan Preview", classes="section-title")
                 yield Markdown(id="detail-view", markdown="Select an add-on from the list.")
@@ -203,12 +263,31 @@ class AIAddonsTUIApp(App[None]):
             else:
                 self.selected_agent = list(self.detected_agents.values())[0]
         else:
-            self.selected_agent = AgentDetectionResult(
+            default_agent = AgentDetectionResult(
                 agent_id="claude-code",
                 name="Claude Code",
                 installed=True,
                 capabilities=[AgentCapability.MCP, AgentCapability.SKILL],
             )
+            self.detected_agents = {"claude-code": default_agent}
+            self.selected_agent = default_agent
+
+        # Populate agent Select options with detection status badges
+        agent_select = self.query_one("#select-agent", Select)
+        agent_options = [
+            (
+                f"{agent.name} (detected)" if agent.installed else f"{agent.name} (not detected)",
+                agent.agent_id,
+            )
+            for agent in self.detected_agents.values()
+        ]
+        agent_select.set_options(agent_options)
+        if self.selected_agent:
+            agent_select.value = self.selected_agent.agent_id
+
+        # Set scope Select value
+        scope_select = self.query_one("#select-scope", Select)
+        scope_select.value = self.selected_scope.value
 
         self._refresh_addon_list()
         self._update_config_summary()
@@ -252,26 +331,53 @@ class AIAddonsTUIApp(App[None]):
     def _refresh_addon_list(self) -> None:
         """Populate or refresh the Addon ListView with installation status badges."""
         list_view = self.query_one("#addon-list", ListView)
-        list_view.clear()
 
-        for m in self.manifests:
-            is_inst, curr_v, newer_v = self._get_installation_status(m)
-            if is_inst and newer_v:
-                badge = f"[bold yellow](Update: v{curr_v}->v{newer_v})[/bold yellow]"
-            elif is_inst:
-                badge = f"[bold green](Installed v{curr_v})[/bold green]"
-            else:
-                badge = "[dim](Available)[/dim]"
+        if not list_view.children:
+            for m in self.manifests:
+                is_inst, curr_v, newer_v = self._get_installation_status(m)
+                if is_inst and newer_v:
+                    badge = f"[bold yellow](Update: v{curr_v}->v{newer_v})[/bold yellow]"
+                elif is_inst:
+                    badge = f"[bold green](Installed v{curr_v})[/bold green]"
+                else:
+                    badge = "[dim](Available)[/dim]"
 
-            label_str = f"{m.name} ({m.id}) {badge}"
-            list_view.append(ListItem(Label(label_str), id=f"item-{m.id}"))
+                label_str = f"{m.name} ({m.id}) {badge}"
+                list_view.append(ListItem(Label(label_str), id=f"item-{m.id}"))
+        else:
+            for m in self.manifests:
+                is_inst, curr_v, newer_v = self._get_installation_status(m)
+                if is_inst and newer_v:
+                    badge = f"[bold yellow](Update: v{curr_v}->v{newer_v})[/bold yellow]"
+                elif is_inst:
+                    badge = f"[bold green](Installed v{curr_v})[/bold green]"
+                else:
+                    badge = "[dim](Available)[/dim]"
+
+                label_str = f"{m.name} ({m.id}) {badge}"
+                try:
+                    item = list_view.query_one(f"#item-{m.id}", ListItem)
+                    item.query_one(Label).update(label_str)
+                except Exception:
+                    pass
 
     def _update_config_summary(self) -> None:
         summary_widget = self.query_one("#config-summary", Static)
         agent_str = self.selected_agent.name if self.selected_agent else "None detected"
         scope_str = self.selected_scope.value.capitalize()
-        text = f"Agent: [green]{agent_str}[/green]\nScope: [yellow]{scope_str}[/yellow]"
+        installed_status = (
+            " [green](detected)[/green]"
+            if (self.selected_agent and self.selected_agent.installed)
+            else " [yellow](not detected)[/yellow]"
+        )
+        text = f"Agent: [bold]{agent_str}[/bold]{installed_status}\nScope: [bold]{scope_str}[/bold]"
         summary_widget.update(text)
+
+    def _on_target_config_changed(self) -> None:
+        """Refresh summary, list badges, and detail view when agent or scope changes."""
+        self._update_config_summary()
+        self._refresh_addon_list()
+        self._update_details_view()
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         """Handle selection of an add-on item from the list."""
@@ -383,6 +489,65 @@ class AIAddonsTUIApp(App[None]):
             )
         )
 
+    def action_cycle_agent(self) -> None:
+        """Cycle through detected/available target agents."""
+        if not self.detected_agents:
+            return
+        agent_keys = list(self.detected_agents.keys())
+        if self.selected_agent and self.selected_agent.agent_id in agent_keys:
+            curr_idx = agent_keys.index(self.selected_agent.agent_id)
+            next_idx = (curr_idx + 1) % len(agent_keys)
+        else:
+            next_idx = 0
+        next_agent_id = agent_keys[next_idx]
+        self.selected_agent = self.detected_agents[next_agent_id]
+
+        agent_select = self.query_one("#select-agent", Select)
+        if agent_select.value != next_agent_id:
+            agent_select.value = next_agent_id
+        else:
+            self._on_target_config_changed()
+
+        self.notify(f"Target agent set to {self.selected_agent.name}", severity="information")
+
+    def action_toggle_scope(self) -> None:
+        """Toggle between Workspace and Global configuration scopes."""
+        if self.selected_scope == Scope.WORKSPACE:
+            self.selected_scope = Scope.GLOBAL
+        else:
+            self.selected_scope = Scope.WORKSPACE
+
+        scope_select = self.query_one("#select-scope", Select)
+        if scope_select.value != self.selected_scope.value:
+            scope_select.value = self.selected_scope.value
+        else:
+            self._on_target_config_changed()
+
+        self.notify(f"Scope switched to {self.selected_scope.value.capitalize()}", severity="information")
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        """Handle user selection from target agent and scope dropdowns."""
+        if event.control.id == "select-agent":
+            if event.value != Select.BLANK and event.value is not None:
+                agent_id = str(event.value)
+                if agent_id in self.detected_agents:
+                    target_agent = self.detected_agents[agent_id]
+                    if self.selected_agent is None or self.selected_agent.agent_id != target_agent.agent_id:
+                        self.selected_agent = target_agent
+                        self._on_target_config_changed()
+                        self.notify(f"Target agent set to {self.selected_agent.name}", severity="information")
+        elif event.control.id == "select-scope":
+            if event.value != Select.BLANK and event.value is not None:
+                scope_str = str(event.value)
+                try:
+                    new_scope = Scope.from_str(scope_str)
+                    if self.selected_scope != new_scope:
+                        self.selected_scope = new_scope
+                        self._on_target_config_changed()
+                        self.notify(f"Scope switched to {self.selected_scope.value.capitalize()}", severity="information")
+                except ValueError:
+                    pass
+
     def action_install(self) -> None:
         """Trigger add-on installation."""
         btn = self.query_one("#btn-confirm", Button)
@@ -421,6 +586,10 @@ class AIAddonsTUIApp(App[None]):
             self.action_doctor()
         elif event.button.id == "btn-sync":
             self.action_sync()
+        elif event.button.id == "btn-switch-agent":
+            self.action_cycle_agent()
+        elif event.button.id == "btn-toggle-scope":
+            self.action_toggle_scope()
 
     # -------------------------------------------------------------------------
     # Compatibility & Plan Preview
