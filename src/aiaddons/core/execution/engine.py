@@ -153,14 +153,23 @@ class ExecutionEngine:
         self.wal_manager = wal_manager or TransactionWALManager()
         self.state_store = state_store or InstalledStateStore()
         self.lockfile_manager = lockfile_manager or LockfileManager()
-        self.verification_engine = verification_engine or VerificationEngine()
-        self.registry = registry
         self.workspace_dir = (workspace_dir or Path.cwd()).resolve()
+        self.verification_engine = verification_engine or VerificationEngine(
+            workspace_dir=self.workspace_dir
+        )
+        self.registry = registry
         from aiaddons.core.acquisition.engine import AcquisitionEngine
 
         self.acquisition_engine = acquisition_engine or AcquisitionEngine(
             runner=self.external_runner
         )
+
+    def _resolve_target_root(self, target_root: str | Path) -> str:
+        """Resolve workspace root indicator ('.') to canonical workspace directory."""
+        s = str(target_root)
+        if s in (".", "./", ""):
+            return str(self.workspace_dir)
+        return s
 
     def execute_plan(
         self,
@@ -1196,39 +1205,41 @@ class ExecutionEngine:
         acquired_result: AcquiredSourceResult | None = None,
     ) -> RollbackAction:
         """Dispatch a single operation to its execution primitive."""
+        effective_root = self._resolve_target_root(op.target_root)
         if dry_run:
             if op.target_path:
-                verify_safe_target_path(op.target_root, op.target_path)
+                verify_safe_target_path(effective_root, op.target_path)
             return RollbackAction(
                 op_type=op.op_type.value,
-                target_root=op.target_root,
+                target_root=effective_root,
                 target_path=op.target_path or "",
             )
 
         if isinstance(op, CreateDirectoryOperation):
-            _, dest = verify_safe_target_path(op.target_root, op.directory_path)
+            _, dest = verify_safe_target_path(effective_root, op.directory_path)
             existed = dest.exists()
-            create_directory_primitive(op)
+            op_to_run = op if effective_root == op.target_root else op.model_copy(update={"target_root": effective_root})
+            create_directory_primitive(op_to_run)
             return RollbackAction(
                 op_type="directory",
-                target_root=op.target_root,
+                target_root=effective_root,
                 target_path=op.directory_path,
                 existed_before=existed,
             )
 
         elif isinstance(op, WriteFileOperation):
-            _, dest = verify_safe_target_path(op.target_root, op.file_path)
+            _, dest = verify_safe_target_path(effective_root, op.file_path)
             existed = dest.exists()
             backup = dest.read_text(encoding="utf-8") if (existed and dest.is_file()) else None
             atomic_write_file_primitive(
-                target_root=op.target_root,
+                target_root=effective_root,
                 file_path=op.file_path,
                 content=op.content,
                 overwrite=op.overwrite,
             )
             return RollbackAction(
                 op_type="file",
-                target_root=op.target_root,
+                target_root=effective_root,
                 target_path=op.file_path,
                 backup_content=backup,
                 existed_before=existed,
@@ -1247,20 +1258,21 @@ class ExecutionEngine:
                             f"verified staging boundary '{staging_root}'."
                         ) from err
 
-            _, dest = verify_safe_target_path(op.target_root, op.destination_path)
+            _, dest = verify_safe_target_path(effective_root, op.destination_path)
             existed = dest.exists()
             backup = dest.read_text(encoding="utf-8") if (existed and dest.is_file()) else None
-            copy_file_primitive(op)
+            op_to_run = op if effective_root == op.target_root else op.model_copy(update={"target_root": effective_root})
+            copy_file_primitive(op_to_run)
             return RollbackAction(
                 op_type="file",
-                target_root=op.target_root,
+                target_root=effective_root,
                 target_path=op.destination_path,
                 backup_content=backup,
                 existed_before=existed,
             )
 
         elif isinstance(op, ModifyJsonOperation):
-            _, dest = verify_safe_target_path(op.target_root, op.file_path)
+            _, dest = verify_safe_target_path(effective_root, op.file_path)
             existed = dest.exists()
             backup = dest.read_text(encoding="utf-8") if (existed and dest.is_file()) else None
 
@@ -1278,11 +1290,11 @@ class ExecutionEngine:
                             var_key = v[2:-1]
                             if secret_values[var_key] is not None:
                                 resolved_value["env"][k] = secret_values[var_key]
-            op_to_run = op if resolved_value == op.value else op.model_copy(update={"value": resolved_value})
+            op_to_run = op.model_copy(update={"target_root": effective_root, "value": resolved_value})
             modify_json_primitive(op_to_run)
             return RollbackAction(
                 op_type="json",
-                target_root=op.target_root,
+                target_root=effective_root,
                 target_path=op.file_path,
                 backup_content=backup,
                 existed_before=existed,
@@ -1290,20 +1302,21 @@ class ExecutionEngine:
             )
 
         elif isinstance(op, ModifyYamlOperation):
-            _, dest = verify_safe_target_path(op.target_root, op.file_path)
+            _, dest = verify_safe_target_path(effective_root, op.file_path)
             existed = dest.exists()
             backup = dest.read_text(encoding="utf-8") if (existed and dest.is_file()) else None
-            modify_yaml_primitive(op)
+            op_to_run = op if effective_root == op.target_root else op.model_copy(update={"target_root": effective_root})
+            modify_yaml_primitive(op_to_run)
             return RollbackAction(
                 op_type="yaml",
-                target_root=op.target_root,
+                target_root=effective_root,
                 target_path=op.file_path,
                 backup_content=backup,
                 existed_before=existed,
             )
 
         elif isinstance(op, AddMcpServerOperation):
-            _, dest = verify_safe_target_path(op.target_root, op.config_path)
+            _, dest = verify_safe_target_path(effective_root, op.config_path)
             existed = dest.exists()
             backup = dest.read_text(encoding="utf-8") if (existed and dest.is_file()) else None
 
@@ -1327,7 +1340,7 @@ class ExecutionEngine:
 
             rollback_action = RollbackAction(
                 op_type="json",
-                target_root=op.target_root,
+                target_root=effective_root,
                 target_path=op.config_path,
                 json_path=json_key,
                 backup_content=backup,
@@ -1336,7 +1349,7 @@ class ExecutionEngine:
 
             modify_op = ModifyJsonOperation(
                 description=f"Inject MCP server '{op.server_name}' configuration",
-                target_root=op.target_root,
+                target_root=effective_root,
                 file_path=op.config_path,
                 json_path=json_key,
                 value=mcp_val,
@@ -1376,15 +1389,15 @@ class ExecutionEngine:
 
             skill_dest_dir = op.destination_dir
             skill_file_path = f"{op.destination_dir}/{op.skill_file}"
-            _, dest_dir_path = verify_safe_target_path(op.target_root, skill_dest_dir)
-            _, dest_file_path = verify_safe_target_path(op.target_root, skill_file_path)
+            _, dest_dir_path = verify_safe_target_path(effective_root, skill_dest_dir)
+            _, dest_file_path = verify_safe_target_path(effective_root, skill_file_path)
 
             existed = dest_dir_path.exists()
 
             create_directory_primitive(
                 CreateDirectoryOperation(
                     description=f"Create skill directory '{skill_dest_dir}'",
-                    target_root=op.target_root,
+                    target_root=effective_root,
                     directory_path=skill_dest_dir,
                 )
             )
@@ -1443,7 +1456,7 @@ class ExecutionEngine:
                 raise SecurityValidationError("Null byte detected in skill file content.")
 
             atomic_write_file_primitive(
-                target_root=op.target_root,
+                target_root=effective_root,
                 file_path=skill_file_path,
                 content=resolved_skill_content,
                 overwrite=True,
@@ -1452,7 +1465,7 @@ class ExecutionEngine:
             # Handle supporting files
             for supp in op.supporting_files:
                 supp_dest_path = f"{op.destination_dir}/{supp}"
-                verify_safe_target_path(op.target_root, supp_dest_path)
+                verify_safe_target_path(effective_root, supp_dest_path)
 
                 supp_content: str
                 if supp in op.supporting_contents:
@@ -1474,7 +1487,7 @@ class ExecutionEngine:
                                 msg = (
                                     "Security violation: Supporting file symlink"
                                     f" '{supp}' escapes source directory."
-                                )
+                                    )
                                 raise SecurityValidationError(msg)
                         supp_content = src_supp_file.read_text(encoding="utf-8")
                     elif acquired_result and acquired_result.source_type in (
@@ -1497,7 +1510,7 @@ class ExecutionEngine:
                     raise SecurityValidationError(msg)
 
                 atomic_write_file_primitive(
-                    target_root=op.target_root,
+                    target_root=effective_root,
                     file_path=supp_dest_path,
                     content=supp_content,
                     overwrite=True,
@@ -1505,13 +1518,13 @@ class ExecutionEngine:
 
             return RollbackAction(
                 op_type="directory",
-                target_root=op.target_root,
+                target_root=effective_root,
                 target_path=skill_dest_dir,
                 existed_before=existed,
             )
 
         elif isinstance(op, AddPluginReferenceOperation):
-            _, dest = verify_safe_target_path(op.target_root, op.config_path)
+            _, dest = verify_safe_target_path(effective_root, op.config_path)
             existed = dest.exists()
             backup = dest.read_text(encoding="utf-8") if (existed and dest.is_file()) else None
 
@@ -1522,7 +1535,7 @@ class ExecutionEngine:
             }
             modify_op = ModifyJsonOperation(
                 description=f"Register plugin reference '{op.plugin_id}'",
-                target_root=op.target_root,
+                target_root=effective_root,
                 file_path=op.config_path,
                 json_path=json_key,
                 value=plugin_val,
@@ -1532,7 +1545,7 @@ class ExecutionEngine:
 
             return RollbackAction(
                 op_type="json",
-                target_root=op.target_root,
+                target_root=effective_root,
                 target_path=op.config_path,
                 json_path=json_key,
                 backup_content=backup,
@@ -1540,30 +1553,30 @@ class ExecutionEngine:
             )
 
         elif isinstance(op, RemoveMcpServerOperation):
-            _, dest = verify_safe_target_path(op.target_root, op.config_path)
+            _, dest = verify_safe_target_path(effective_root, op.config_path)
             existed = dest.exists()
             backup = dest.read_text(encoding="utf-8") if (existed and dest.is_file()) else None
 
             json_key = f"mcpServers.{op.server_name}"
             rollback_action = RollbackAction(
                 op_type="json",
-                target_root=op.target_root,
+                target_root=effective_root,
                 target_path=op.config_path,
                 backup_content=backup,
                 existed_before=existed,
             )
 
             if existed:
-                remove_json_key_primitive(op.target_root, op.config_path, json_key)
+                remove_json_key_primitive(effective_root, op.config_path, json_key)
 
             return rollback_action
 
         elif isinstance(op, RemoveSkillOperation):
-            _, dest_dir = verify_safe_target_path(op.target_root, op.destination_dir)
+            _, dest_dir = verify_safe_target_path(effective_root, op.destination_dir)
             existed = dest_dir.exists() and dest_dir.is_dir()
             backup_files: dict[str, str] = {}
             if existed:
-                target_root_p = Path(op.target_root).expanduser().resolve()
+                target_root_p = Path(effective_root).expanduser().resolve()
                 for file_p in dest_dir.rglob("*"):
                     if file_p.is_file():
                         try:
@@ -1577,42 +1590,42 @@ class ExecutionEngine:
 
             rollback_action = RollbackAction(
                 op_type="directory",
-                target_root=op.target_root,
+                target_root=effective_root,
                 target_path=op.destination_dir,
                 existed_before=existed,
                 backup_files=backup_files,
             )
 
             if existed:
-                remove_directory_primitive(op.target_root, op.destination_dir)
+                remove_directory_primitive(effective_root, op.destination_dir)
 
             return rollback_action
 
         elif isinstance(op, RemovePluginReferenceOperation):
-            _, dest = verify_safe_target_path(op.target_root, op.config_path)
+            _, dest = verify_safe_target_path(effective_root, op.config_path)
             existed = dest.exists()
             backup = dest.read_text(encoding="utf-8") if (existed and dest.is_file()) else None
 
             json_key = f"plugins.{op.plugin_id}"
             rollback_action = RollbackAction(
                 op_type="json",
-                target_root=op.target_root,
+                target_root=effective_root,
                 target_path=op.config_path,
                 backup_content=backup,
                 existed_before=existed,
             )
 
             if existed:
-                remove_json_key_primitive(op.target_root, op.config_path, json_key)
+                remove_json_key_primitive(effective_root, op.config_path, json_key)
 
             return rollback_action
 
         elif isinstance(op, RemoveDirectoryOperation):
-            _, dest_dir = verify_safe_target_path(op.target_root, op.directory_path)
+            _, dest_dir = verify_safe_target_path(effective_root, op.directory_path)
             existed = dest_dir.exists() and dest_dir.is_dir()
             backup_files = {}
             if existed:
-                target_root_p = Path(op.target_root).expanduser().resolve()
+                target_root_p = Path(effective_root).expanduser().resolve()
                 for file_p in dest_dir.rglob("*"):
                     if file_p.is_file():
                         try:
@@ -1626,32 +1639,32 @@ class ExecutionEngine:
 
             rollback_action = RollbackAction(
                 op_type="directory",
-                target_root=op.target_root,
+                target_root=effective_root,
                 target_path=op.directory_path,
                 existed_before=existed,
                 backup_files=backup_files,
             )
 
             if existed:
-                remove_directory_primitive(op.target_root, op.directory_path)
+                remove_directory_primitive(effective_root, op.directory_path)
 
             return rollback_action
 
         elif isinstance(op, RemoveFileOperation):
-            _, dest_file = verify_safe_target_path(op.target_root, op.file_path)
+            _, dest_file = verify_safe_target_path(effective_root, op.file_path)
             existed = dest_file.exists() and dest_file.is_file()
             backup = dest_file.read_text(encoding="utf-8") if existed else None
 
             rollback_action = RollbackAction(
                 op_type="file",
-                target_root=op.target_root,
+                target_root=effective_root,
                 target_path=op.file_path,
                 backup_content=backup,
                 existed_before=existed,
             )
 
             if existed:
-                remove_file_primitive(op.target_root, op.file_path)
+                remove_file_primitive(effective_root, op.file_path)
 
             return rollback_action
 
