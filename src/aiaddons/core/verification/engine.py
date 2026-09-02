@@ -113,9 +113,18 @@ class VerificationEngine:
         self,
         agent_manager: AgentDetectionManager | None = None,
         registry: Registry | None = None,
+        workspace_dir: Path | None = None,
     ) -> None:
         self.agent_manager = agent_manager
         self.registry = registry
+        self.workspace_dir = (workspace_dir or Path.cwd()).resolve()
+
+    def _resolve_target_root(self, target_root: str | Path) -> str:
+        """Resolve workspace root indicator ('.') to canonical workspace directory."""
+        s = str(target_root)
+        if s in (".", "./", ""):
+            return str(self.workspace_dir)
+        return s
 
     def verify_operation(
         self,
@@ -124,6 +133,7 @@ class VerificationEngine:
         secret_values: dict[str, str] | None = None,
     ) -> VerificationCheck:
         """Verify a single installation operation against the actual host state."""
+        effective_root = self._resolve_target_root(op.target_root)
         secrets_list = list(secret_values.values()) if secret_values else []
         check_id = f"verify_{op.op_type.value}_{op.target_path or op.target_root}"
         desc = mask_secrets_in_text(op.description, secrets_list)
@@ -137,7 +147,7 @@ class VerificationEngine:
             )
 
         if isinstance(op, CreateDirectoryOperation):
-            _, dest = verify_path_security(op.target_root, op.directory_path)
+            _, dest = verify_path_security(effective_root, op.directory_path)
             if dest.exists() and dest.is_dir():
                 return VerificationCheck(
                     check_id=check_id,
@@ -156,7 +166,7 @@ class VerificationEngine:
             )
 
         if isinstance(op, WriteFileOperation):
-            _, dest = verify_path_security(op.target_root, op.file_path)
+            _, dest = verify_path_security(effective_root, op.file_path)
             if not dest.exists() or not dest.is_file():
                 return VerificationCheck(
                     check_id=check_id,
@@ -186,7 +196,7 @@ class VerificationEngine:
             )
 
         if isinstance(op, CopyFileOperation):
-            _, dest = verify_path_security(op.target_root, op.destination_path)
+            _, dest = verify_path_security(effective_root, op.destination_path)
             src_path = Path(op.source_path).expanduser().resolve()
             if not dest.exists() or not dest.is_file():
                 return VerificationCheck(
@@ -220,7 +230,7 @@ class VerificationEngine:
             )
 
         if isinstance(op, ModifyJsonOperation):
-            _, dest = verify_path_security(op.target_root, op.file_path)
+            _, dest = verify_path_security(effective_root, op.file_path)
             if not dest.exists() or not dest.is_file():
                 return VerificationCheck(
                     check_id=check_id,
@@ -283,7 +293,7 @@ class VerificationEngine:
             )
 
         if isinstance(op, ModifyYamlOperation):
-            _, dest = verify_path_security(op.target_root, op.file_path)
+            _, dest = verify_path_security(effective_root, op.file_path)
             if not dest.exists() or not dest.is_file():
                 return VerificationCheck(
                     check_id=check_id,
@@ -328,7 +338,7 @@ class VerificationEngine:
             )
 
         if isinstance(op, AddMcpServerOperation):
-            _, dest = verify_path_security(op.target_root, op.config_path)
+            _, dest = verify_path_security(effective_root, op.config_path)
             if not dest.exists() or not dest.is_file():
                 return VerificationCheck(
                     check_id=check_id,
@@ -452,7 +462,7 @@ class VerificationEngine:
             )
 
         if isinstance(op, AddSkillOperation):
-            _, dest_dir = verify_path_security(op.target_root, op.destination_dir)
+            _, dest_dir = verify_path_security(effective_root, op.destination_dir)
             if not dest_dir.exists() or not dest_dir.is_dir():
                 return VerificationCheck(
                     check_id=check_id,
@@ -463,7 +473,7 @@ class VerificationEngine:
                     error_info=f"Skill directory '{op.destination_dir}' missing.",
                 )
             skill_file_rel = f"{op.destination_dir}/{op.skill_file}"
-            _, skill_file_dest = verify_path_security(op.target_root, skill_file_rel)
+            _, skill_file_dest = verify_path_security(effective_root, skill_file_rel)
             if not skill_file_dest.exists() or not skill_file_dest.is_file():
                 return VerificationCheck(
                     check_id=check_id,
@@ -496,7 +506,7 @@ class VerificationEngine:
             # Verify supporting files
             for supp in op.supporting_files:
                 supp_rel = f"{op.destination_dir}/{supp}"
-                _, supp_dest = verify_path_security(op.target_root, supp_rel)
+                _, supp_dest = verify_path_security(effective_root, supp_rel)
                 if not supp_dest.exists() or not supp_dest.is_file():
                     return VerificationCheck(
                         check_id=check_id,
@@ -534,7 +544,7 @@ class VerificationEngine:
             )
 
         if isinstance(op, AddPluginReferenceOperation):
-            _, dest = verify_path_security(op.target_root, op.config_path)
+            _, dest = verify_path_security(effective_root, op.config_path)
             if not dest.exists() or not dest.is_file():
                 return VerificationCheck(
                     check_id=check_id,
@@ -593,7 +603,7 @@ class VerificationEngine:
             )
 
         if isinstance(op, RemoveDirectoryOperation):
-            _, dest = verify_path_security(op.target_root, op.directory_path)
+            _, dest = verify_path_security(effective_root, op.directory_path)
             if not dest.exists():
                 return VerificationCheck(
                     check_id=check_id,
@@ -612,7 +622,7 @@ class VerificationEngine:
             )
 
         if isinstance(op, RemoveFileOperation):
-            _, dest = verify_path_security(op.target_root, op.file_path)
+            _, dest = verify_path_security(effective_root, op.file_path)
             if not dest.exists():
                 return VerificationCheck(
                     check_id=check_id,
@@ -631,7 +641,7 @@ class VerificationEngine:
             )
 
         if isinstance(op, RemoveMcpServerOperation):
-            _, dest = verify_path_security(op.target_root, op.config_path)
+            _, dest = verify_path_security(effective_root, op.config_path)
             if not dest.exists():
                 return VerificationCheck(
                     check_id=check_id,
@@ -673,7 +683,7 @@ class VerificationEngine:
             )
 
         if isinstance(op, RemoveSkillOperation):
-            _, dest_dir = verify_path_security(op.target_root, op.destination_dir)
+            _, dest_dir = verify_path_security(effective_root, op.destination_dir)
             if not dest_dir.exists():
                 return VerificationCheck(
                     check_id=check_id,
@@ -692,7 +702,7 @@ class VerificationEngine:
             )
 
         if isinstance(op, RemovePluginReferenceOperation):
-            _, dest = verify_path_security(op.target_root, op.config_path)
+            _, dest = verify_path_security(effective_root, op.config_path)
             if not dest.exists():
                 return VerificationCheck(
                     check_id=check_id,
@@ -851,7 +861,8 @@ class VerificationEngine:
                 continue
 
             try:
-                _, resolved_dest = verify_path_security(op.target_root, target_path)
+                effective_root = self._resolve_target_root(op.target_root)
+                _, resolved_dest = verify_path_security(effective_root, target_path)
                 if isinstance(op, (CreateDirectoryOperation, AddSkillOperation)):
                     if resolved_dest.exists():
                         all_clean = False
