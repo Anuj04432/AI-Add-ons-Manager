@@ -19,22 +19,36 @@ from aiaddons.integrations.base import BaseIntegrationInstaller
 def make_relative_config_path(raw_path: str, scope: Scope) -> str:
     """Safely derive a relative configuration path from raw agent config location."""
     path_obj = Path(raw_path)
-    if not path_obj.is_absolute():
+    if not path_obj.is_absolute() and not raw_path.startswith(("/", "\\")):
         res = raw_path
-    else:
-        root_dir = Path.home() if scope == Scope.GLOBAL else Path.cwd()
+    elif scope == Scope.GLOBAL:
         try:
-            res = str(path_obj.relative_to(root_dir))
+            res = str(path_obj.relative_to(Path.home()))
         except ValueError:
             parts = path_obj.parts
             found_idx = None
-            for idx, part in enumerate(parts):
-                if part.startswith(".") or part.endswith(".json"):
+            for idx in range(len(parts) - 1, -1, -1):
+                if parts[idx].startswith("."):
                     found_idx = idx
                     break
             if found_idx is not None:
                 res = "/".join(parts[found_idx:])
             else:
+                res = path_obj.name
+    else:
+        # Scope.WORKSPACE: identify relative path from agent directory or dotfile
+        parts = path_obj.parts
+        found_idx = None
+        for idx in range(len(parts) - 1, -1, -1):
+            if parts[idx].startswith("."):
+                found_idx = idx
+                break
+        if found_idx is not None:
+            res = "/".join(parts[found_idx:])
+        else:
+            try:
+                res = str(path_obj.relative_to(Path.cwd()))
+            except ValueError:
                 res = path_obj.name
 
     res = res.replace("\\", "/")
