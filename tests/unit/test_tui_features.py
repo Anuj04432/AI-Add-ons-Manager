@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-from textual.widgets import Checkbox, ListView, Markdown, Static
+from textual.widgets import Button, Checkbox, ListView, Markdown, Select, Static
 
 from aiaddons.core.execution.external.models import ExternalExecutionResult, ExternalRuntime
 from aiaddons.core.models.agent import AgentCapability, AgentDetectionResult, Scope
@@ -42,7 +42,7 @@ def _setup_test_environment(tmp_path: Path) -> tuple[Path, Path, Path, AgentDete
                 "license": "MIT",
                 "category": "developer-tools",
                 "integration_type": "mcp",
-                "target_agents": ["claude-code"],
+                "target_agents": ["*"],
                 "supported_scopes": ["global", "workspace"],
                 "source": {
                     "source_type": "package",
@@ -76,7 +76,7 @@ def _setup_test_environment(tmp_path: Path) -> tuple[Path, Path, Path, AgentDete
                 "license": "MIT",
                 "category": "database",
                 "integration_type": "mcp",
-                "target_agents": ["claude-code"],
+                "target_agents": ["*"],
                 "supported_scopes": ["global", "workspace"],
                 "source": {
                     "source_type": "package",
@@ -364,6 +364,7 @@ addons:
                 await pilot.pause()
 
                 assert sync_screen.prune_enabled is True
+                assert sync_screen.current_plan is not None
                 assert len(sync_screen.current_plan.to_prune) == 1
 
                 # Execute Sync
@@ -377,3 +378,326 @@ addons:
                 assert gh_rec is None
 
     asyncio.run(_run_test())
+
+
+def test_target_agent_and_scope_switching(tmp_path: Path) -> None:
+    """Verify switching target Agent (Claude Code / Codex / Antigravity) and Scope (Workspace / Global)."""
+    async def _run_test() -> None:
+        reg_dir, store_dir, workspace_dir, claude_agent = _setup_test_environment(tmp_path)
+
+        antigravity_agent = AgentDetectionResult(
+            agent_id="antigravity",
+            name="Antigravity CLI",
+            installed=True,
+            supported_scopes=[Scope.GLOBAL, Scope.WORKSPACE],
+            capabilities=[AgentCapability.MCP, AgentCapability.SKILL],
+            workspace_config_path=str(workspace_dir / ".agents" / "mcp_config.json"),
+        )
+        codex_agent = AgentDetectionResult(
+            agent_id="codex",
+            name="Codex",
+            installed=False,
+            supported_scopes=[Scope.GLOBAL, Scope.WORKSPACE],
+            capabilities=[AgentCapability.MCP],
+        )
+
+        mock_mgr = patch(
+            "aiaddons.tui.app.AgentDetectionManager.detect_agents",
+            return_value={
+                "claude-code": claude_agent,
+                "antigravity": antigravity_agent,
+                "codex": codex_agent,
+            },
+        )
+
+        with mock_mgr:
+            app = AIAddonsTUIApp(registry_dir=reg_dir, workspace_dir=workspace_dir, store_dir=store_dir)
+            async with app.run_test() as pilot:
+                assert app.is_running
+                assert app.selected_agent is not None
+                assert app.selected_agent.agent_id == "claude-code"
+                init_scope: Scope = app.selected_scope
+                assert init_scope == Scope.WORKSPACE
+
+                agent_select = app.query_one("#select-agent", Select)
+                scope_select = app.query_one("#select-scope", Select)
+                assert agent_select.value == "claude-code"
+                assert scope_select.value == "workspace"
+
+                # 1. Test keybinding action_cycle_agent
+                app.action_cycle_agent()
+                await pilot.pause()
+                assert app.selected_agent is not None and app.selected_agent.agent_id == "antigravity"
+                assert agent_select.value == "antigravity"
+
+                # 2. Test keybinding action_toggle_scope
+                app.action_toggle_scope()
+                await pilot.pause()
+                toggled_scope: Scope = app.selected_scope
+                assert toggled_scope == Scope.GLOBAL
+                assert scope_select.value == "global"
+
+                # 3. Test changing Select widget directly for agent
+                agent_select.value = "codex"
+                await pilot.pause()
+                assert app.selected_agent is not None and app.selected_agent.agent_id == "codex"
+
+                # 4. Test changing Select widget directly for scope
+                scope_select.value = "workspace"
+                await pilot.pause()
+                reset_scope: Scope = app.selected_scope
+                assert reset_scope == Scope.WORKSPACE
+
+                # 5. Test button presses
+                app.query_one("#btn-switch-agent", Button).press()
+                await pilot.pause()
+                # Should cycle from codex (last in list) back to claude-code
+                assert app.selected_agent is not None and app.selected_agent.agent_id == "claude-code"
+                assert agent_select.value == "claude-code"
+
+                app.query_one("#btn-toggle-scope", Button).press()
+                await pilot.pause()
+                btn_scope: Scope = app.selected_scope
+                assert btn_scope == Scope.GLOBAL
+                assert scope_select.value == "global"
+
+                # 6. Test keypresses via pilot.press
+                await pilot.press("a")
+                await pilot.pause()
+                assert app.selected_agent is not None and app.selected_agent.agent_id == "antigravity"
+
+                await pilot.press("o")
+                await pilot.pause()
+                key_scope: Scope = app.selected_scope
+                assert key_scope == Scope.WORKSPACE
+
+                # 7. Verify detail view and compatibility update when Antigravity is selected
+                agent_select.value = "antigravity"
+                scope_select.value = "workspace"
+                github_manifest = next(m for m in app.manifests if m.id == "github-mcp")
+                app.selected_manifest = github_manifest
+                app._update_details_view()
+                await pilot.pause()
+
+                detail_md = app.query_one("#detail-view", Markdown)
+                assert "Antigravity CLI" in detail_md.source
+
+    asyncio.run(_run_test())
+
+
+def test_installation_targeting_antigravity(tmp_path: Path) -> None:
+    """Verify that selecting Antigravity as target agent generates plans targeting Antigravity."""
+    async def _run_test() -> None:
+        reg_dir, store_dir, workspace_dir, claude_agent = _setup_test_environment(tmp_path)
+
+        antigravity_agent = AgentDetectionResult(
+            agent_id="antigravity",
+            name="Antigravity CLI",
+            installed=True,
+            supported_scopes=[Scope.GLOBAL, Scope.WORKSPACE],
+            capabilities=[AgentCapability.MCP, AgentCapability.SKILL],
+            workspace_config_path=str(workspace_dir / ".agents" / "mcp_config.json"),
+        )
+
+        mock_mgr = patch(
+            "aiaddons.tui.app.AgentDetectionManager.detect_agents",
+            return_value={
+                "claude-code": claude_agent,
+                "antigravity": antigravity_agent,
+            },
+        )
+
+        with mock_mgr:
+            app = AIAddonsTUIApp(registry_dir=reg_dir, workspace_dir=workspace_dir, store_dir=store_dir)
+            async with app.run_test() as pilot:
+                # Switch to Antigravity CLI
+                agent_select = app.query_one("#select-agent", Select)
+                agent_select.value = "antigravity"
+                await pilot.pause()
+
+                assert app.selected_agent is not None and app.selected_agent.agent_id == "antigravity"
+
+                # Select github-mcp
+                github_manifest = next(m for m in app.manifests if m.id == "github-mcp")
+                app.selected_manifest = github_manifest
+                app._update_details_view()
+                await pilot.pause()
+
+                # Generate preview plan
+                app.action_preview_plan()
+                await pilot.pause()
+
+                assert app.current_plan is not None
+                assert app.current_plan.target_agent == "antigravity"
+                assert app.current_plan.addon_id == "github-mcp"
+
+    asyncio.run(_run_test())
+
+
+def test_tui_real_install_and_remove_antigravity(tmp_path: Path) -> None:
+    """Verify REAL install and remove operations targeting Antigravity CLI in TUI."""
+    async def _run_test() -> None:
+        reg_dir, store_dir, workspace_dir, claude_agent = _setup_test_environment(tmp_path)
+        claude_initial_content = (workspace_dir / ".claude.json").read_text(encoding="utf-8")
+
+        antigravity_agent = AgentDetectionResult(
+            agent_id="antigravity",
+            name="Antigravity CLI",
+            installed=True,
+            supported_scopes=[Scope.GLOBAL, Scope.WORKSPACE],
+            capabilities=[AgentCapability.MCP, AgentCapability.SKILL],
+            workspace_config_path=str(workspace_dir / ".agents" / "mcp_config.json"),
+        )
+
+        mock_mgr = patch(
+            "aiaddons.tui.app.AgentDetectionManager.detect_agents",
+            return_value={
+                "claude-code": claude_agent,
+                "antigravity": antigravity_agent,
+            },
+        )
+
+        with mock_mgr:
+            app = AIAddonsTUIApp(registry_dir=reg_dir, workspace_dir=workspace_dir, store_dir=store_dir)
+            async with app.run_test() as pilot:
+                # 1. Switch to Antigravity
+                agent_select = app.query_one("#select-agent", Select)
+                agent_select.value = "antigravity"
+                await pilot.pause()
+
+                github_manifest = next(m for m in app.manifests if m.id == "github-mcp")
+                app.selected_manifest = github_manifest
+                app._update_details_view()
+                await pilot.pause()
+
+                # 2. Press Install [I]
+                app.action_install()
+                await pilot.pause()
+
+                # Verify actual file created at .agents/mcp_config.json
+                ag_cfg = workspace_dir / ".agents" / "mcp_config.json"
+                assert ag_cfg.exists(), "Antigravity config .agents/mcp_config.json was not created"
+                ag_data = json.loads(ag_cfg.read_text(encoding="utf-8"))
+                assert "github-mcp" in ag_data.get("mcpServers", {})
+
+                # Verify Claude config is completely untouched
+                claude_cfg = workspace_dir / ".claude.json"
+                assert claude_cfg.read_text(encoding="utf-8") == claude_initial_content
+
+                # 3. Press Remove [R]
+                app.action_remove()
+                await pilot.pause()
+
+                # Modal should appear
+                assert isinstance(app.screen, RemoveConfirmModal)
+                modal = app.screen
+                modal.on_button_pressed(Button.Pressed(modal.query_one("#btn-confirm-remove", Button)))
+                await pilot.pause()
+
+                # Verify server removed from .agents/mcp_config.json
+                ag_data_after = json.loads(ag_cfg.read_text(encoding="utf-8"))
+                assert "github-mcp" not in ag_data_after.get("mcpServers", {})
+
+    asyncio.run(_run_test())
+
+
+def test_tui_real_install_and_remove_claude(tmp_path: Path) -> None:
+    """Verify REAL install and remove operations targeting Claude Code in TUI."""
+    async def _run_test() -> None:
+        reg_dir, store_dir, workspace_dir, claude_agent = _setup_test_environment(tmp_path)
+
+        mock_mgr = patch(
+            "aiaddons.tui.app.AgentDetectionManager.detect_agents",
+            return_value={"claude-code": claude_agent},
+        )
+
+        with mock_mgr:
+            app = AIAddonsTUIApp(registry_dir=reg_dir, workspace_dir=workspace_dir, store_dir=store_dir)
+            async with app.run_test() as pilot:
+                github_manifest = next(m for m in app.manifests if m.id == "github-mcp")
+                app.selected_manifest = github_manifest
+                app._update_details_view()
+                await pilot.pause()
+
+                # 1. Install
+                app.action_install()
+                await pilot.pause()
+
+                claude_cfg = workspace_dir / ".claude.json"
+                assert claude_cfg.exists(), "Claude config .claude.json was not created"
+                c_data = json.loads(claude_cfg.read_text(encoding="utf-8"))
+                assert "github-mcp" in c_data.get("mcpServers", {})
+
+                # 2. Remove
+                app.action_remove()
+                await pilot.pause()
+
+                assert isinstance(app.screen, RemoveConfirmModal)
+                modal = app.screen
+                modal.on_button_pressed(Button.Pressed(modal.query_one("#btn-confirm-remove", Button)))
+                await pilot.pause()
+
+                c_data_after = json.loads(claude_cfg.read_text(encoding="utf-8"))
+                assert "github-mcp" not in c_data_after.get("mcpServers", {})
+
+    asyncio.run(_run_test())
+
+
+def test_tui_real_install_and_remove_codex(tmp_path: Path) -> None:
+    """Verify REAL install and remove operations targeting Codex in TUI."""
+    async def _run_test() -> None:
+        reg_dir, store_dir, workspace_dir, claude_agent = _setup_test_environment(tmp_path)
+
+        codex_agent = AgentDetectionResult(
+            agent_id="codex",
+            name="Codex",
+            installed=True,
+            supported_scopes=[Scope.GLOBAL, Scope.WORKSPACE],
+            capabilities=[AgentCapability.MCP],
+            workspace_config_path=str(workspace_dir / ".codex"),
+        )
+
+        mock_mgr = patch(
+            "aiaddons.tui.app.AgentDetectionManager.detect_agents",
+            return_value={
+                "claude-code": claude_agent,
+                "codex": codex_agent,
+            },
+        )
+
+        with mock_mgr:
+            app = AIAddonsTUIApp(registry_dir=reg_dir, workspace_dir=workspace_dir, store_dir=store_dir)
+            async with app.run_test() as pilot:
+                # 1. Switch to Codex
+                agent_select = app.query_one("#select-agent", Select)
+                agent_select.value = "codex"
+                await pilot.pause()
+
+                github_manifest = next(m for m in app.manifests if m.id == "github-mcp")
+                app.selected_manifest = github_manifest
+                app._update_details_view()
+                await pilot.pause()
+
+                # 2. Install
+                app.action_install()
+                await pilot.pause()
+
+                codex_cfg = workspace_dir / ".codex" / "config.json"
+                assert codex_cfg.exists(), "Codex config .codex/config.json was not created"
+                cdx_data = json.loads(codex_cfg.read_text(encoding="utf-8"))
+                assert "github-mcp" in cdx_data.get("mcpServers", {})
+
+                # 3. Remove
+                app.action_remove()
+                await pilot.pause()
+
+                assert isinstance(app.screen, RemoveConfirmModal)
+                modal = app.screen
+                modal.on_button_pressed(Button.Pressed(modal.query_one("#btn-confirm-remove", Button)))
+                await pilot.pause()
+
+                cdx_data_after = json.loads(codex_cfg.read_text(encoding="utf-8"))
+                assert "github-mcp" not in cdx_data_after.get("mcpServers", {})
+
+    asyncio.run(_run_test())
+
