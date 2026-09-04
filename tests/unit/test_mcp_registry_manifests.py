@@ -184,6 +184,151 @@ def test_brave_search_mcp_manifest_validates(registry_loader: RegistryLoader) ->
     assert env_vars[0].secret is True
 
 
+def test_firecrawl_mcp_manifest_validates(registry_loader: RegistryLoader) -> None:
+    """Verify firecrawl-mcp manifest loads with Firecrawl package and optional secret FIRECRAWL_API_KEY."""
+    file_path = MANIFESTS_DIR / "firecrawl-mcp.yaml"
+    assert file_path.exists()
+
+    manifest = registry_loader.load_file(file_path)
+    assert manifest.id == "firecrawl-mcp"
+    assert manifest.name == "Firecrawl MCP Server"
+    assert manifest.version == "1.0.0"
+    assert manifest.integration_type == IntegrationType.MCP
+    assert manifest.category == "search"
+    assert manifest.documentation_url == "https://github.com/firecrawl/firecrawl-mcp-server"
+    assert manifest.source.source_type == SourceType.PACKAGE
+    assert manifest.source.package_name == "firecrawl-mcp"
+    assert manifest.source.checksum and manifest.source.checksum.startswith("sha256:")
+    assert manifest.trust.verification_status == VerificationStatus.VERIFIED
+    assert manifest.trust.publisher.name == "Firecrawl"
+    assert manifest.trust.allowed_executables == ["npx"]
+    assert manifest.handler_spec.mcp is not None
+    assert manifest.handler_spec.mcp.runtime == MCPRuntime.NPX
+    assert manifest.handler_spec.mcp.transport == MCPTransport.STDIO
+    assert manifest.handler_spec.mcp.package_name == "firecrawl-mcp"
+
+    env_vars = manifest.handler_spec.mcp.env_vars
+    assert len(env_vars) == 1
+    assert env_vars[0].name == "FIRECRAWL_API_KEY"
+    assert env_vars[0].required is False
+    assert env_vars[0].secret is True
+
+
+def test_sequential_thinking_mcp_manifest_validates(registry_loader: RegistryLoader) -> None:
+    """Verify sequential-thinking-mcp manifest loads correctly for reference reasoning server."""
+    file_path = MANIFESTS_DIR / "sequential-thinking-mcp.yaml"
+    assert file_path.exists()
+
+    manifest = registry_loader.load_file(file_path)
+    assert manifest.id == "sequential-thinking-mcp"
+    assert manifest.name == "Sequential Thinking MCP Server"
+    assert manifest.version == "1.0.0"
+    assert manifest.integration_type == IntegrationType.MCP
+    assert manifest.category == "developer-tools"
+    assert manifest.documentation_url == "https://github.com/modelcontextprotocol/servers"
+    assert manifest.source.source_type == SourceType.PACKAGE
+    assert manifest.source.package_name == "@modelcontextprotocol/server-sequential-thinking"
+    assert manifest.source.checksum and manifest.source.checksum.startswith("sha256:")
+    assert manifest.trust.verification_status == VerificationStatus.VERIFIED
+    assert manifest.trust.publisher.name == "Model Context Protocol Team"
+    assert manifest.trust.allowed_executables == ["npx"]
+    assert manifest.handler_spec.mcp is not None
+    assert manifest.handler_spec.mcp.runtime == MCPRuntime.NPX
+    assert manifest.handler_spec.mcp.transport == MCPTransport.STDIO
+    assert manifest.handler_spec.mcp.package_name == "@modelcontextprotocol/server-sequential-thinking"
+    assert len(manifest.handler_spec.mcp.env_vars) == 0
+
+
+def test_notion_mcp_manifest_validates(registry_loader: RegistryLoader) -> None:
+    """Verify notion-mcp manifest loads with official @notionhq/notion-mcp-server package and NOTION_TOKEN."""
+    file_path = MANIFESTS_DIR / "notion-mcp.yaml"
+    assert file_path.exists()
+
+    manifest = registry_loader.load_file(file_path)
+    assert manifest.id == "notion-mcp"
+    assert manifest.name == "Notion MCP Server"
+    assert manifest.version == "1.0.0"
+    assert manifest.integration_type == IntegrationType.MCP
+    assert manifest.category == "productivity"
+    assert manifest.documentation_url == "https://github.com/makenotion/notion-mcp-server"
+    assert manifest.source.source_type == SourceType.PACKAGE
+    assert manifest.source.package_name == "@notionhq/notion-mcp-server"
+    assert manifest.source.checksum and manifest.source.checksum.startswith("sha256:")
+    assert manifest.trust.verification_status == VerificationStatus.VERIFIED
+    assert manifest.trust.publisher.name == "Notion Labs, Inc."
+    assert manifest.trust.allowed_executables == ["npx"]
+    assert manifest.handler_spec.mcp is not None
+    assert manifest.handler_spec.mcp.runtime == MCPRuntime.NPX
+    assert manifest.handler_spec.mcp.transport == MCPTransport.STDIO
+    assert manifest.handler_spec.mcp.package_name == "@notionhq/notion-mcp-server"
+
+    env_vars = manifest.handler_spec.mcp.env_vars
+    assert len(env_vars) == 1
+    assert env_vars[0].name == "NOTION_TOKEN"
+    assert env_vars[0].required is True
+    assert env_vars[0].secret is True
+
+
+def test_linear_mcp_manifest_validates(registry_loader: RegistryLoader) -> None:
+    """Verify linear-mcp manifest loads with @ibraheem4/linear-mcp and LINEAR_API_KEY secret."""
+    file_path = MANIFESTS_DIR / "linear-mcp.yaml"
+    assert file_path.exists()
+
+    manifest = registry_loader.load_file(file_path)
+    assert manifest.id == "linear-mcp"
+    assert manifest.name == "Linear MCP Server"
+    assert manifest.version == "1.0.0"
+    assert manifest.integration_type == IntegrationType.MCP
+    assert manifest.category == "project-management"
+    assert manifest.documentation_url == "https://github.com/jerhadf/linear-mcp-server"
+    assert manifest.source.source_type == SourceType.PACKAGE
+    assert manifest.source.package_name == "@ibraheem4/linear-mcp"
+    assert manifest.source.checksum and manifest.source.checksum.startswith("sha256:")
+    assert manifest.trust.verification_status == VerificationStatus.COMMUNITY
+    assert manifest.trust.publisher.name == "Ibraheem Adams"
+    assert manifest.trust.allowed_executables == ["npx"]
+    assert manifest.handler_spec.mcp is not None
+    assert manifest.handler_spec.mcp.runtime == MCPRuntime.NPX
+    assert manifest.handler_spec.mcp.transport == MCPTransport.STDIO
+    assert manifest.handler_spec.mcp.package_name == "@ibraheem4/linear-mcp"
+
+    env_vars = manifest.handler_spec.mcp.env_vars
+    assert len(env_vars) == 1
+    assert env_vars[0].name == "LINEAR_API_KEY"
+    assert env_vars[0].required is True
+    assert env_vars[0].secret is True
+
+
+def test_figma_mcp_manifest_validates(registry_loader: RegistryLoader) -> None:
+    """Verify figma-mcp manifest loads with figma-console-mcp and FIGMA_ACCESS_TOKEN secret."""
+    file_path = MANIFESTS_DIR / "figma-mcp.yaml"
+    assert file_path.exists()
+
+    manifest = registry_loader.load_file(file_path)
+    assert manifest.id == "figma-mcp"
+    assert manifest.name == "Figma MCP Server"
+    assert manifest.version == "1.0.0"
+    assert manifest.integration_type == IntegrationType.MCP
+    assert manifest.category == "design"
+    assert manifest.documentation_url == "https://github.com/southleft/figma-console-mcp"
+    assert manifest.source.source_type == SourceType.PACKAGE
+    assert manifest.source.package_name == "figma-console-mcp"
+    assert manifest.source.checksum and manifest.source.checksum.startswith("sha256:")
+    assert manifest.trust.verification_status == VerificationStatus.COMMUNITY
+    assert manifest.trust.publisher.name == "Southleft"
+    assert manifest.trust.allowed_executables == ["npx"]
+    assert manifest.handler_spec.mcp is not None
+    assert manifest.handler_spec.mcp.runtime == MCPRuntime.NPX
+    assert manifest.handler_spec.mcp.transport == MCPTransport.STDIO
+    assert manifest.handler_spec.mcp.package_name == "figma-console-mcp"
+
+    env_vars = manifest.handler_spec.mcp.env_vars
+    assert len(env_vars) == 1
+    assert env_vars[0].name == "FIGMA_ACCESS_TOKEN"
+    assert env_vars[0].required is True
+    assert env_vars[0].secret is True
+
+
 # ============================================================================
 # 2. Strict Schema Guardrails & Security Rejection
 # ============================================================================
@@ -198,10 +343,15 @@ def test_brave_search_mcp_manifest_validates(registry_loader: RegistryLoader) ->
         "postgres-mcp.yaml",
         "filesystem-mcp.yaml",
         "brave-search-mcp.yaml",
+        "firecrawl-mcp.yaml",
+        "sequential-thinking-mcp.yaml",
+        "notion-mcp.yaml",
+        "linear-mcp.yaml",
+        "figma-mcp.yaml",
     ],
 )
 def test_manifest_rejects_extra_unrecognized_fields(manifest_file: str) -> None:
-    """Ensure extra='forbid' rejects any undeclared or invented fields across all 6 manifests."""
+    """Ensure extra='forbid' rejects any undeclared or invented fields across all 11 manifests."""
     file_path = MANIFESTS_DIR / manifest_file
     raw_dict = yaml.safe_load(file_path.read_text(encoding="utf-8"))
     raw_dict["unauthorized_custom_field"] = "malicious_payload"
@@ -219,6 +369,11 @@ def test_manifest_rejects_extra_unrecognized_fields(manifest_file: str) -> None:
         "postgres-mcp.yaml",
         "filesystem-mcp.yaml",
         "brave-search-mcp.yaml",
+        "firecrawl-mcp.yaml",
+        "sequential-thinking-mcp.yaml",
+        "notion-mcp.yaml",
+        "linear-mcp.yaml",
+        "figma-mcp.yaml",
     ],
 )
 def test_manifest_rejects_shell_injection(manifest_file: str) -> None:
