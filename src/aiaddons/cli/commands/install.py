@@ -222,7 +222,14 @@ def install_command(
         help="Output installation results in machine-readable JSON format",
     ),
 ) -> None:
-    """Install one or more add-ons or output a dry-run installation plan with safety verification."""
+    """Install one or more add-ons or output a dry-run installation plan with safety verification.
+
+    Required secrets (e.g. API tokens) are prompted interactively with masked input
+    supporting Ctrl+V clipboard pasting on Windows. Alternatively, you can pre-set
+    secrets via environment variables before running:
+      PowerShell: $env:TOKEN_NAME="your_token"
+      Bash/Zsh:   export TOKEN_NAME="your_token"
+    """
     sym_ok, sym_fail = _get_symbols()
 
     # 1. Collect requested add-on specs (from CLI arguments and/or stack file)
