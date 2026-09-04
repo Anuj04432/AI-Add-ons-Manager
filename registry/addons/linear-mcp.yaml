@@ -1,0 +1,45 @@
+id: linear-mcp
+name: Linear MCP Server
+version: 1.0.0
+description: Model Context Protocol server for Linear issue tracking, project management, and team workflow automation.
+documentation_url: https://github.com/jerhadf/linear-mcp-server
+license: MIT
+category: project-management
+integration_type: mcp
+target_agents:
+  - "*"
+supported_scopes:
+  - global
+  - workspace
+source:
+  source_type: package
+  package_name: "@ibraheem4/linear-mcp"
+  checksum: "sha256:d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6"
+dependencies:
+  - name: npx
+    type: cli
+    required: true
+trust:
+  verification_status: community
+  publisher:
+    name: Ibraheem Adams
+    url: https://github.com/ibraheem4
+    declared_verified: false
+  allowed_executables:
+    - npx
+tags:
+  - linear
+  - issue-tracking
+  - project-management
+  - agile
+  - mcp
+handler_spec:
+  mcp:
+    transport: stdio
+    runtime: npx
+    package_name: "@ibraheem4/linear-mcp"
+    env_vars:
+      - name: LINEAR_API_KEY
+        required: true
+        secret: true
+        description: Linear Personal API Key (obtain from Linear Settings under Account Security and Access)
