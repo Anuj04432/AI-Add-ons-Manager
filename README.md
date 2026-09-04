@@ -135,6 +135,16 @@ aiaddons install github-mcp postgres-mcp code-reviewer refactoring-skill --scope
 aiaddons install --file team-stack.yaml
 ```
 
+> [!TIP]
+> **Configuring Required Secrets (API Keys & Tokens)**
+> 
+> When installing add-ons that require credentials (such as `GITHUB_TOKEN` for `github-mcp`), `aiaddons` prompts for masked, no-echo terminal input.
+> - **Windows Paste Support**: Supports pasting tokens via <kbd>Ctrl</kbd>+<kbd>V</kbd> into masked password prompts on Windows PowerShell, CMD, and Windows Terminal.
+> - **Environment Variable Alternative**: You can also pre-set secrets in your shell environment before running `install` (especially convenient for long tokens or automated CI runs):
+>   - **Windows PowerShell**: `$env:GITHUB_TOKEN = "ghp_your_token_value"`
+>   - **Linux / macOS (Bash/Zsh)**: `export GITHUB_TOKEN="ghp_your_token_value"`
+>   - **Windows CMD**: `set GITHUB_TOKEN=ghp_your_token_value`
+
 ### 2. Workspace Lockfile Synchronization
 
 When cloning a repository with an existing `aiaddons.lock`, synchronize your agent environment with zero manual configuration:
