@@ -1,7 +1,8 @@
 """Comprehensive unit tests for Phase 5B.8 Secure Secret Management & Isolation."""
 
+import sys
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -33,9 +34,13 @@ from aiaddons.core.models.manifest import (
     TrustMetadata,
 )
 from aiaddons.core.secrets import (
+    DefaultTTYInputProvider,
     ResolvedSecret,
     SecretResolver,
     SecretStatus,
+    get_windows_clipboard_text,
+    secure_prompt,
+    win_getpass_with_paste,
 )
 from aiaddons.state.lockfile import LockfileAddonEntry, LockfileManager
 from aiaddons.state.store import InstalledAddonRecord, InstalledStateStore
@@ -369,3 +374,141 @@ def test_rollback_on_failure_with_masked_logs(tmp_path: Path) -> None:
     assert res.status.value == "rolled_back"
     assert secret_value not in str(res.error_message)
     assert "***MASKED***" in str(res.error_message)
+
+
+def test_windows_clipboard_non_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify get_windows_clipboard_text returns None on non-Windows platforms."""
+    monkeypatch.setattr("sys.platform", "linux")
+    assert get_windows_clipboard_text() is None
+
+
+def test_windows_clipboard_win32_open_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify get_windows_clipboard_text gracefully handles OpenClipboard failure."""
+    monkeypatch.setattr("sys.platform", "win32")
+    mock_ctypes = MagicMock()
+    mock_ctypes.windll.user32.OpenClipboard.return_value = False
+    with patch.dict("sys.modules", {"ctypes": mock_ctypes}):
+        assert get_windows_clipboard_text() is None
+
+
+def test_win_getpass_typing_and_submit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify manual character typing without pasting submits cleanly on Enter."""
+    keys = ["m", "y", "P", "A", "T", "1", "2", "3", "\r"]
+    mock_msvcrt = MagicMock()
+    mock_msvcrt.getwch.side_effect = keys
+
+    monkeypatch.setattr("sys.stdin", sys.__stdin__)
+    with (
+        patch("sys.stdin.isatty", return_value=True),
+        patch.dict("sys.modules", {"msvcrt": mock_msvcrt}),
+    ):
+        result = win_getpass_with_paste("Enter value: ")
+        assert result == "myPAT123"
+        assert mock_msvcrt.getwch.call_count == len(keys)
+
+
+def test_win_getpass_backspace(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify backspace removes previous characters correctly."""
+    keys = ["a", "b", "\b", "c", "\r"]
+    mock_msvcrt = MagicMock()
+    mock_msvcrt.getwch.side_effect = keys
+
+    monkeypatch.setattr("sys.stdin", sys.__stdin__)
+    with (
+        patch("sys.stdin.isatty", return_value=True),
+        patch.dict("sys.modules", {"msvcrt": mock_msvcrt}),
+    ):
+        result = win_getpass_with_paste("Enter value: ")
+        assert result == "ac"
+
+
+def test_win_getpass_ctrl_v_paste(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify Ctrl+V (\x16) intercepts and pastes clipboard text."""
+    keys = ["t", "o", "k", "_", "\x16", "\r"]
+    mock_msvcrt = MagicMock()
+    mock_msvcrt.getwch.side_effect = keys
+
+    monkeypatch.setattr("sys.stdin", sys.__stdin__)
+    with (
+        patch("sys.stdin.isatty", return_value=True),
+        patch.dict("sys.modules", {"msvcrt": mock_msvcrt}),
+        patch(
+            "aiaddons.core.secrets.resolver.get_windows_clipboard_text",
+            return_value="ghp_pasted_secret_value_12345\r\n",
+        ),
+    ):
+        result = win_getpass_with_paste("Enter value: ")
+        assert result == "tok_ghp_pasted_secret_value_12345"
+
+
+def test_win_getpass_extended_keys_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify extended keys (arrows, Home, End via \\xe0 or \\x00) do not corrupt input."""
+    # User presses Left Arrow (\xe0, 'K'), then 'x', then Up Arrow (\xe0, 'H'), then Enter
+    keys = ["\xe0", "K", "x", "\xe0", "H", "\r"]
+    mock_msvcrt = MagicMock()
+    mock_msvcrt.getwch.side_effect = keys
+
+    monkeypatch.setattr("sys.stdin", sys.__stdin__)
+    with (
+        patch("sys.stdin.isatty", return_value=True),
+        patch.dict("sys.modules", {"msvcrt": mock_msvcrt}),
+    ):
+        result = win_getpass_with_paste("Enter value: ")
+        assert result == "x"
+
+
+def test_win_getpass_ctrl_c(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify Ctrl+C raises KeyboardInterrupt."""
+    mock_msvcrt = MagicMock()
+    mock_msvcrt.getwch.side_effect = ["\003"]
+
+    monkeypatch.setattr("sys.stdin", sys.__stdin__)
+    with (
+        patch("sys.stdin.isatty", return_value=True),
+        patch.dict("sys.modules", {"msvcrt": mock_msvcrt}),
+        pytest.raises(KeyboardInterrupt),
+    ):
+        win_getpass_with_paste("Enter value: ")
+
+
+def test_win_getpass_eof(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify Ctrl+D / Ctrl+Z on empty input raises EOFError."""
+    mock_msvcrt = MagicMock()
+    mock_msvcrt.getwch.side_effect = ["\004"]
+
+    monkeypatch.setattr("sys.stdin", sys.__stdin__)
+    with (
+        patch("sys.stdin.isatty", return_value=True),
+        patch.dict("sys.modules", {"msvcrt": mock_msvcrt}),
+        pytest.raises(EOFError),
+    ):
+        win_getpass_with_paste("Enter value: ")
+
+
+def test_secure_prompt_patched_fallback() -> None:
+    """Verify secure_prompt delegates to getpass.getpass when getpass.getpass is mocked."""
+    with patch("getpass.getpass", return_value="mocked_via_getpass") as mock_gp:
+        val = secure_prompt("Prompt: ")
+        assert val == "mocked_via_getpass"
+        mock_gp.assert_called_once_with("Prompt: ")
+
+
+def test_default_tty_input_provider_prompt_formatting() -> None:
+    """Verify DefaultTTYInputProvider builds helpful prompt text including PowerShell tip."""
+    captured: list[str] = []
+
+    def mock_prompt_func(p: str) -> str:
+        captured.append(p)
+        return "val123"
+
+    provider = DefaultTTYInputProvider(prompt_func=mock_prompt_func)
+    res = provider.prompt_secret("MY_API_KEY", "My API Key Description")
+
+    assert res == "val123"
+    assert len(captured) == 1
+    prompt_out = captured[0]
+    assert "Secret required:" in prompt_out
+    assert "MY_API_KEY" in prompt_out
+    assert "(My API Key Description)" in prompt_out
+    assert "$env:MY_API_KEY" in prompt_out
+    assert "Enter value:" in prompt_out
