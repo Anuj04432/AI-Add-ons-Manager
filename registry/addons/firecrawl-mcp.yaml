@@ -1,0 +1,45 @@
+id: firecrawl-mcp
+name: Firecrawl MCP Server
+version: 1.0.0
+description: Model Context Protocol server providing web scraping, search, crawling, and content extraction via the Firecrawl API.
+documentation_url: https://github.com/firecrawl/firecrawl-mcp-server
+license: MIT
+category: search
+integration_type: mcp
+target_agents:
+  - "*"
+supported_scopes:
+  - global
+  - workspace
+source:
+  source_type: package
+  package_name: firecrawl-mcp
+  checksum: "sha256:f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2"
+dependencies:
+  - name: npx
+    type: cli
+    required: true
+trust:
+  verification_status: verified
+  publisher:
+    name: Firecrawl
+    url: https://github.com/firecrawl
+    declared_verified: true
+  allowed_executables:
+    - npx
+tags:
+  - firecrawl
+  - web-scraping
+  - search
+  - crawling
+  - mcp
+handler_spec:
+  mcp:
+    transport: stdio
+    runtime: npx
+    package_name: firecrawl-mcp
+    env_vars:
+      - name: FIRECRAWL_API_KEY
+        required: false
+        secret: true
+        description: Firecrawl API Key (optional for self-hosted instances, obtain from firecrawl.dev)
