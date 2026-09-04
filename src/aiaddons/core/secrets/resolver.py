@@ -21,8 +21,133 @@ class InputProvider(Protocol):
     def prompt_secret(self, env_name: str, description: str | None = None) -> str: ...
 
 
+_original_getpass = getpass.getpass
+
+
+def get_windows_clipboard_text() -> str | None:
+    """Retrieve unicode text from Windows clipboard via Win32 API without external dependencies."""
+    if sys.platform != "win32":
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+        import time
+
+        user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+
+        user32.OpenClipboard.argtypes = [wintypes.HWND]
+        user32.OpenClipboard.restype = wintypes.BOOL
+        user32.CloseClipboard.argtypes = []
+        user32.CloseClipboard.restype = wintypes.BOOL
+        user32.GetClipboardData.argtypes = [wintypes.UINT]
+        user32.GetClipboardData.restype = wintypes.HANDLE
+        kernel32.GlobalLock.argtypes = [wintypes.HGLOBAL]
+        kernel32.GlobalLock.restype = wintypes.LPVOID
+        kernel32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
+        kernel32.GlobalUnlock.restype = wintypes.BOOL
+
+        cf_unicodetext = 13
+        opened = False
+        for _ in range(3):
+            if user32.OpenClipboard(None):
+                opened = True
+                break
+            time.sleep(0.01)
+
+        if not opened:
+            return None
+
+        try:
+            h_data = user32.GetClipboardData(cf_unicodetext)
+            if not h_data:
+                return None
+            p_text = kernel32.GlobalLock(h_data)
+            if not p_text:
+                return None
+            try:
+                return str(ctypes.wstring_at(p_text))
+            finally:
+                kernel32.GlobalUnlock(h_data)
+        finally:
+            user32.CloseClipboard()
+    except Exception:
+        return None
+
+
+def win_getpass_with_paste(prompt: str = "Password: ") -> str:
+    """Prompt for secret with echo off on Windows, supporting Ctrl+V clipboard pasting."""
+    import msvcrt
+
+    stdin = sys.stdin
+    orig = sys.__stdin__
+    if stdin is None or orig is None or stdin is not orig:
+        return getpass.getpass(prompt)
+    if not stdin.isatty():
+        return getpass.getpass(prompt)
+
+    for c in prompt:
+        msvcrt.putwch(c)
+
+    pw = ""
+    while True:
+        c = msvcrt.getwch()
+        if c in ("\r", "\n"):
+            break
+        if c == "\003":  # Ctrl+C
+            raise KeyboardInterrupt
+        if c in ("\004", "\032"):  # Ctrl+D or Ctrl+Z (EOF)
+            if not pw:
+                raise EOFError
+            break
+        if c == "\b":  # Backspace
+            pw = pw[:-1]
+        elif c == "\x16":  # Ctrl+V (paste from clipboard)
+            clip = get_windows_clipboard_text()
+            if clip:
+                pw += clip.rstrip("\r\n")
+        elif c in ("\x00", "\xe0"):  # Extended key prefix (arrows, insert, delete, F-keys)
+            try:
+                _ = msvcrt.getwch()
+            except Exception:
+                pass
+        elif ord(c) >= 32:
+            pw += c
+
+    msvcrt.putwch("\r")
+    msvcrt.putwch("\n")
+    return pw
+
+
+def secure_prompt(prompt_text: str) -> str:
+    """Prompt user securely without echoing input to terminal output.
+
+    On Windows interactive consoles, supports Ctrl+V clipboard pasting while
+    preserving no-echo masking. Delegates to getpass.getpass when mocked or on
+    non-Windows/non-TTY platforms.
+    """
+    if getpass.getpass is not _original_getpass:
+        return getpass.getpass(prompt_text)
+
+    stdin = sys.stdin
+    orig = sys.__stdin__
+    if (
+        sys.platform == "win32"
+        and stdin is not None
+        and orig is not None
+        and stdin is orig
+        and stdin.isatty()
+    ):
+        try:
+            return win_getpass_with_paste(prompt_text)
+        except Exception:
+            return getpass.getpass(prompt_text)
+
+    return getpass.getpass(prompt_text)
+
+
 class DefaultTTYInputProvider:
-    """Default interactive prompt provider using getpass for no-echo input."""
+    """Default interactive prompt provider with Windows paste support and no-echo input."""
 
     def __init__(self, prompt_func: Callable[[str], str] | None = None) -> None:
         self._prompt_func = prompt_func
@@ -32,13 +157,14 @@ class DefaultTTYInputProvider:
         prompt_lines = ["Secret required:", f"  {env_name}"]
         if description:
             prompt_lines.append(f"  ({description})")
+        prompt_lines.append(f"  (Tip: Alternatively, pre-set $env:{env_name}=\"value\" before running)")
         prompt_lines.append("\nEnter value: ")
         prompt_text = "\n".join(prompt_lines)
 
         if self._prompt_func is not None:
             return self._prompt_func(prompt_text)
 
-        return getpass.getpass(prompt_text)
+        return secure_prompt(prompt_text)
 
 
 class SecretResolver:
