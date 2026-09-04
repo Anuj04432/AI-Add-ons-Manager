@@ -15,6 +15,9 @@ import pytest
 
 pytest_plugins = ["tests.fixtures.ponytail_manifests"]
 
+import aiaddons.core.installer.engine  # noqa: F401
+import aiaddons.state.transaction  # noqa: F401
+
 # Real host paths captured once at import time before any mocking
 REAL_USER_HOME = Path.home().resolve()
 REAL_AIADDONS_DIR = (REAL_USER_HOME / ".aiaddons").resolve()
@@ -79,9 +82,9 @@ def isolate_aiaddons_environment(
     monkeypatch.chdir(fake_workspace)
 
     # 5. Guard atomic file writers in state modules against real paths
+    import aiaddons.state.transaction as tx_mod
     import aiaddons.state.lockfile as lockfile_mod
     import aiaddons.state.store as store_mod
-    import aiaddons.state.transaction as tx_mod
 
     orig_store_atomic = store_mod._atomic_write_file
     orig_lock_atomic = lockfile_mod._atomic_write_file
