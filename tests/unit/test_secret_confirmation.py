@@ -407,3 +407,103 @@ class TestSecretResolverEmptyPrompt:
         result = resolver.resolve_spec(spec, allow_interactive=True, override_env={})
         assert result.status == SecretStatus.CONFIGURED
         assert result.value == "valid_secret_abc"
+
+
+# ---------------------------------------------------------------------------
+# Windows Custom Getpass Tests
+# ---------------------------------------------------------------------------
+
+class TestWindowsGetpassAsteriskMasking:
+    """Verify live character masking and backspace handling in win_getpass_with_paste."""
+
+    @pytest.fixture
+    def mock_win_env(self, monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+        """Mock the Windows environment to force win_getpass_with_paste to execute."""
+        # Force sys.stdin.isatty to True and make sure it matches sys.__stdin__
+        mock_stdin = MagicMock()
+        mock_stdin.isatty.return_value = True
+        monkeypatch.setattr(sys, "stdin", mock_stdin)
+        monkeypatch.setattr(sys, "__stdin__", mock_stdin)
+
+        # Mock msvcrt
+        mock_msvcrt = MagicMock()
+        monkeypatch.setitem(sys.modules, "msvcrt", mock_msvcrt)
+        
+        # We also mock getpass just in case it falls through
+        mock_getpass = MagicMock()
+        monkeypatch.setattr("aiaddons.core.secrets.resolver.getpass.getpass", mock_getpass)
+
+        return mock_msvcrt
+
+    def test_single_characters_echo_asterisks(self, mock_win_env: MagicMock) -> None:
+        """Each standard character typed results in exactly one asterisk printed to stdout."""
+        from aiaddons.core.secrets.resolver import win_getpass_with_paste
+        
+        # Sequence: "abc" then Enter (\r)
+        mock_win_env.getwch.side_effect = ["a", "b", "c", "\r"]
+        
+        stdout_capture = io.StringIO()
+        with patch("sys.stdout", stdout_capture):
+            result = win_getpass_with_paste("Prompt> ")
+            
+        assert result == "abc"
+        out = stdout_capture.getvalue()
+        # Prompt + 3 asterisks + newline
+        assert out == "Prompt> ***\n"
+        assert "abc" not in out  # The real secret must NEVER be written to stdout
+
+    def test_backspace_erases_visually(self, mock_win_env: MagicMock) -> None:
+        """Backspace characters correctly remove from buffer and erase visual asterisks."""
+        from aiaddons.core.secrets.resolver import win_getpass_with_paste
+        
+        # Sequence: "a", "b", Backspace (\b), "c", Enter (\r)
+        # Expected visual: * * \b \b * -> *** with one erased
+        mock_win_env.getwch.side_effect = ["a", "b", "\b", "c", "\r"]
+        
+        stdout_capture = io.StringIO()
+        with patch("sys.stdout", stdout_capture):
+            result = win_getpass_with_paste("Prompt> ")
+            
+        assert result == "ac"
+        out = stdout_capture.getvalue()
+        # "Prompt> " followed by "a"(*), "b"(*), backspace(\b \b), "c"(*)
+        assert out == "Prompt> **\b \b*\n"
+        assert "ac" not in out
+
+    def test_backspace_on_empty_buffer_ignored(self, mock_win_env: MagicMock) -> None:
+        """Pressing backspace when the buffer is empty does not output erasing characters."""
+        from aiaddons.core.secrets.resolver import win_getpass_with_paste
+        
+        # Sequence: Backspace (\b), "a", Enter (\r)
+        mock_win_env.getwch.side_effect = ["\b", "a", "\r"]
+        
+        stdout_capture = io.StringIO()
+        with patch("sys.stdout", stdout_capture):
+            result = win_getpass_with_paste("Prompt> ")
+            
+        assert result == "a"
+        out = stdout_capture.getvalue()
+        assert out == "Prompt> *\n"
+
+    def test_paste_ctrl_v_echoes_multiple_asterisks(self, mock_win_env: MagicMock, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Pasting text with Ctrl+V correctly echoes an asterisk for each pasted character."""
+        from aiaddons.core.secrets.resolver import win_getpass_with_paste
+        
+        # Sequence: Ctrl+V (\x16), Enter (\r)
+        mock_win_env.getwch.side_effect = ["\x16", "\r"]
+        
+        # Mock the clipboard function
+        monkeypatch.setattr(
+            "aiaddons.core.secrets.resolver.get_windows_clipboard_text", 
+            lambda: "pasted_secret"
+        )
+        
+        stdout_capture = io.StringIO()
+        with patch("sys.stdout", stdout_capture):
+            result = win_getpass_with_paste("Prompt> ")
+            
+        assert result == "pasted_secret"
+        out = stdout_capture.getvalue()
+        # "pasted_secret" is 13 characters -> 13 asterisks
+        assert out == "Prompt> *************\n"
+        assert "pasted_secret" not in out
