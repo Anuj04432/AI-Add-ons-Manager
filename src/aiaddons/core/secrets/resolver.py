@@ -145,8 +145,8 @@ def win_getpass_with_paste(prompt: str = "Password: ") -> str:
     if not stdin.isatty():
         return getpass.getpass(prompt)
 
-    for c in prompt:
-        msvcrt.putwch(c)
+    sys.stdout.write(prompt)
+    sys.stdout.flush()
 
     pw = ""
     while True:
@@ -160,11 +160,17 @@ def win_getpass_with_paste(prompt: str = "Password: ") -> str:
                 raise EOFError
             break
         if c == "\b":  # Backspace
-            pw = pw[:-1]
+            if pw:
+                pw = pw[:-1]
+                sys.stdout.write("\b \b")
+                sys.stdout.flush()
         elif c == "\x16":  # Ctrl+V (paste from clipboard)
             clip = get_windows_clipboard_text()
             if clip:
-                pw += clip.rstrip("\r\n")
+                to_paste = clip.rstrip("\r\n")
+                pw += to_paste
+                sys.stdout.write("*" * len(to_paste))
+                sys.stdout.flush()
         elif c in ("\x00", "\xe0"):  # Extended key prefix (arrows, insert, delete, F-keys)
             try:
                 _ = msvcrt.getwch()
@@ -172,18 +178,24 @@ def win_getpass_with_paste(prompt: str = "Password: ") -> str:
                 pass
         elif ord(c) >= 32:
             pw += c
+            sys.stdout.write("*")
+            sys.stdout.flush()
 
-    msvcrt.putwch("\r")
-    msvcrt.putwch("\n")
+    sys.stdout.write("\n")
+    sys.stdout.flush()
     return pw
 
 
 def secure_prompt(prompt_text: str) -> str:
     """Prompt user securely without echoing input to terminal output.
 
-    On Windows interactive consoles, supports Ctrl+V clipboard pasting while
-    preserving no-echo masking. Delegates to getpass.getpass when mocked or on
-    non-Windows/non-TTY platforms.
+    On Windows interactive consoles, supports Ctrl+V clipboard pasting and
+    provides live asterisk (`*`) visual feedback for each character.
+    On non-Windows/non-TTY platforms, delegates to standard `getpass.getpass()`,
+    which is completely invisible (no asterisks).
+    
+    TODO: Fast follow - implement termios/tty raw-mode loop for macOS/Linux
+    to provide the same asterisk masking feedback as Windows.
     """
     if getpass.getpass is not _original_getpass:
         return getpass.getpass(prompt_text)
