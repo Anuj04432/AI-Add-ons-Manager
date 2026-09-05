@@ -78,12 +78,12 @@ def test_full_install_remove_cycle_mcp(tmp_path: Path, monkeypatch) -> None:
         lambda self: {"claude-code": _mock_claude_agent(workspace_dir)},
     )
     monkeypatch.chdir(workspace_dir)
-    monkeypatch.setenv("GITHUB_PERSONAL_ACCESS_TOKEN", "dummy_token_12345")
+    monkeypatch.setenv("GITHUB_PERSONAL_ACCESS_TOKEN", "ghp_dummy1234567890dummy1234567890dummy123")
 
     # 1. Install phase
     with (
         patch("aiaddons.core.execution.external.runner.ExternalRunner.execute") as mock_ext,
-        patch("aiaddons.core.secrets.resolver.getpass.getpass", return_value="dummy_pat_12345"),
+        patch("aiaddons.core.secrets.resolver.getpass.getpass", return_value="ghp_dummy1234567890dummy1234567890dummy123"),
     ):
         mock_ext.return_value = ExternalExecutionResult(
             success=True,

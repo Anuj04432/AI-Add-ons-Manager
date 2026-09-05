@@ -90,7 +90,7 @@ def test_secret_resolution_interactive_prompt() -> None:
         return "user_entered_secret_xyz"
 
     mock_input_provider = MagicMock()
-    mock_input_provider.prompt_secret.side_effect = lambda name, desc: mock_prompt(name)
+    mock_input_provider.prompt_secret.side_effect = lambda spec: mock_prompt(spec.name)
 
     resolver = SecretResolver(input_provider=mock_input_provider)
     spec = EnvVarSpec(name="INTERACTIVE_KEY", secret=True, required=True, description="Prompt me")
@@ -99,7 +99,7 @@ def test_secret_resolution_interactive_prompt() -> None:
 
     assert res.status == SecretStatus.CONFIGURED
     assert res.value == "user_entered_secret_xyz"
-    mock_input_provider.prompt_secret.assert_called_once_with("INTERACTIVE_KEY", "Prompt me")
+    mock_input_provider.prompt_secret.assert_called_once_with(spec)
 
 
 def test_secret_resolver_summary() -> None:
@@ -502,7 +502,9 @@ def test_default_tty_input_provider_prompt_formatting() -> None:
         return "val123"
 
     provider = DefaultTTYInputProvider(prompt_func=mock_prompt_func)
-    res = provider.prompt_secret("MY_API_KEY", "My API Key Description")
+    res = provider.prompt_secret(
+        EnvVarSpec(name="MY_API_KEY", description="My API Key Description", secret=True)
+    )
 
     assert res == "val123"
     assert len(captured) == 1

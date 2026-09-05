@@ -92,7 +92,7 @@ def test_mcp_secret_value_written_correctly_across_agents(
     )
     monkeypatch.chdir(workspace_dir)
 
-    test_secret_token = "ghp_secure_actual_token_value_987654321"
+    test_secret_token = "ghp_secure_actual_token_value_9876543210"
     monkeypatch.setenv("GITHUB_PERSONAL_ACCESS_TOKEN", test_secret_token)
 
     real_registry_path = Path(__file__).parent.parent.parent / "registry"
