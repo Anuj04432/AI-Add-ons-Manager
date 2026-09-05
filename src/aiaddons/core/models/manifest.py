@@ -236,10 +236,40 @@ class EnvVarSpec(BaseModel):
     secret: bool = False
     description: str | None = None
 
+    # Optional format validation hints — used for soft warnings, not hard blocks.
+    value_pattern: str | None = Field(
+        default=None,
+        description="Regex pattern the value should match (full-string match via re.fullmatch).",
+    )
+    min_length: int | None = Field(
+        default=None,
+        ge=1,
+        description="Minimum expected character length for the value.",
+    )
+    max_length: int | None = Field(
+        default=None,
+        ge=1,
+        description="Maximum expected character length for the value.",
+    )
+    format_description: str | None = Field(
+        default=None,
+        description="Human-readable description of the expected format (e.g. 'starts with ghp_, 40 chars').",
+    )
+
     @field_validator("name")
     @classmethod
     def validate_env_name(cls, v: str) -> str:
         return validate_env_var_name(v)
+
+    @field_validator("value_pattern")
+    @classmethod
+    def validate_value_pattern(cls, v: str | None) -> str | None:
+        if v is not None:
+            try:
+                re.compile(v)
+            except re.error as exc:
+                raise ValueError(f"Invalid regex in value_pattern: {exc}") from exc
+        return v
 
 
 class MCPRuntime(StrEnum):
@@ -368,6 +398,8 @@ def _check_no_forbidden_shell(obj: Any) -> None:
                 raise ValueError(
                     f"Security violation: Forbidden field '{key}' detected in manifest."
                 )
+            if str(key) == "value_pattern":
+                continue  # Skip regex patterns which naturally contain $, |, ^ etc.
             _check_no_forbidden_shell(val)
     elif isinstance(obj, list):
         for item in obj:
