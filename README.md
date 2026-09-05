@@ -3,7 +3,7 @@
 > **Declarative, security-hardened, transactional package manager for AI coding agents.**
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-370%20passed%2C%204%20skipped-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-501%20passed%2C%204%20skipped-brightgreen.svg)]()
 [![Type Checking](https://img.shields.io/badge/mypy-strict-brightgreen.svg)]()
 [![Code Style](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](pyproject.toml)
@@ -12,7 +12,7 @@
 
 ## What is `aiaddons`?
 
-**`aiaddons`** is an open-source, declarative package and integration manager designed specifically for AI coding agents, including **Anthropic Claude Code** and **OpenAI Codex**. Just as `pip` manages Python dependencies and `npm` manages Node packages, `aiaddons` automates the discovery, compatibility evaluation, acquisition, configuration injection, verification, and lifecycle management of tools and extensions that AI agents require.
+**`aiaddons`** is an open-source, declarative package and integration manager designed specifically for AI coding agents, including **Anthropic Claude Code**, **OpenAI Codex**, and **Antigravity CLI**. Just as `pip` manages Python dependencies and `npm` manages Node packages, `aiaddons` automates the discovery, compatibility evaluation, acquisition, configuration injection, verification, and lifecycle management of tools and extensions that AI agents require.
 
 Modern AI coding agents rely on a growing ecosystem of external capabilities. `aiaddons` standardizes these extensions into four first-class integration primitives:
 
@@ -21,7 +21,7 @@ Modern AI coding agents rely on a growing ecosystem of external capabilities. `a
 * **Composite Plugins**: Multi-component packages combining MCP servers, skills, and CLI tools under unified configuration boundaries.
 * **CLI Tools**: Verified external system binaries and developer utilities required by agents.
 
-`aiaddons` supports dual-scope installation: **Global** (`~/.claude.json`, `~/.codex/`) for user-wide agent availability, and **Workspace** (`.claude.json`, `.agents/`, `aiaddons.lock`) for team-level, reproducible project environments checked into source control.
+`aiaddons` supports dual-scope installation: **Global** (`~/.claude.json`, `~/.codex/`, `~/.gemini/config/mcp_config.json`) for user-wide agent availability, and **Workspace** (`.claude.json`, `.agents/`, `aiaddons.lock`) for team-level, reproducible project environments checked into source control.
 
 ---
 
@@ -36,7 +36,7 @@ Registry manifests describe **WHAT** an add-on is; trusted application code dete
 | **Argument & Parameter Sanitization** | `validate_argument_vector`, `validate_mcp_package_name`, `FORBIDDEN_SHELL_PATTERNS` | Rejects shell metacharacters (`;`, `&&`, `\|\|`, `\|`, `>`, `<`, `$`, `` ` ``), forbidden evaluation flags (`--eval`, `-e`, `-c`, `--exec`), null bytes (`\0`), and malformed package identifiers. |
 | **Boundary Confinement & Traversal Protection** | `verify_safe_target_path`, `validate_safe_relative_path`, `verify_path_security` | Confines all disk writes within designated `target_root` directories. Prohibits parent traversal (`..`), absolute path overrides, Windows drive letters, UNC shares (`\\server\share`), URL-encoded paths (`%2e%2e`), and escaping symlinks. |
 | **Write-Ahead Log (WAL) & Rollbacks** | `TransactionWALManager`, `ExecutionEngine._rollback_executed_stack` | Every installation, update, and removal transitions through durable WAL phases (`REQUESTED` → `PLANNED` → `EXECUTING` → `VERIFIED` → `COMMITTED`). Failures trigger an atomic `RollbackAction` stack. Interrupted transactions are automatically detected and recovered. |
-| **In-Memory Secret Protection** | `SecretResolver`, `mask_secrets_in_text`, `validate_env_var_name` | Manifests declare secret requirements (`secret: true`) without storing plaintext values. Secrets are resolved in-memory via `getpass` prompts or environment variables, masked as `***MASKED***` across logs and output, and blocked from restricted variables (`LD_PRELOAD`, `PYTHONPATH`, `PATH`). |
+| **In-Memory Secret Protection** | `SecretResolver`, `mask_secrets_in_text`, `validate_env_var_name` | Manifests declare secret requirements (`secret: true`) without storing plaintext values. Secrets are resolved in-memory via `getpass` prompts or environment variables, masked as `***MASKED***` across logs and output, and blocked from restricted variables (`LD_PRELOAD`, `PYTHONPATH`, `PATH`). Features soft warnings on malformed secrets, masked preview after entry, and live asterisk feedback on Windows. |
 | **Configuration Drift Detection** | `detect_installation_drift` | Compares live agent configuration files and filesystem contents against recorded states to warn before mutating or removing modified integrations. |
 | **Post-Operation Verification** | `VerificationEngine.verify_plan`, `verify_rollback` | Independent observer verifies that files, hashes (`sha256:`), and JSON/YAML configuration entries match expected values before committing transactions. |
 | **Atomic Persistence** | `_atomic_write_file` (with `os.fsync` and atomic tempfile replacement) | Guarantees that local state database (`~/.aiaddons/state.json`) and workspace lockfiles (`aiaddons.lock`) cannot be corrupted by abrupt terminations or disk errors. |
@@ -93,6 +93,7 @@ flowchart TD
 * **Target AI Coding Agent** (at least one installed):
   * [Claude Code](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/overview) (`claude`)
   * [OpenAI Codex](https://github.com/openai/codex) (`codex`)
+  * Antigravity CLI (`agy` / `antigravity`)
 * **Optional Runtime Binaries**: `git`, `npx` / `node`, `uvx` / `python`, `pip`
 
 ### Install from Source
@@ -196,6 +197,16 @@ aiaddons tui
 ```
 
 ---
+
+
+## Registry & Available Add-ons
+
+The built-in registry currently provides **30 integrations** out of the box, covering a wide spectrum of tools for AI agents. Since the last major update, the registry has been expanded significantly:
+
+* **Newly Added MCP Servers**: `firecrawl-mcp`, `sequential-thinking-mcp`, `notion-mcp`, `linear-mcp`, `figma-mcp`, `github-mcp`, `postgres-mcp`, `brave-search-mcp`, `filesystem-mcp`, `playwright-mcp`, `context7-mcp`
+* **Agent Skills**: Dozens of workflow skills including `refactoring-skill`, `ponytail-audit-skill`, and other behavioral tools.
+
+Additionally, `aiaddons` includes **2 pre-configured stacks** (`dev-starter-stack.yaml`, `agent-behavior-stack.yaml`) in `registry/stacks/` to help quickly bootstrap a team environment.
 
 ## Interactive Terminal UI (TUI)
 
@@ -348,6 +359,11 @@ handler_spec:
 
 ---
 
+
+## Hardening & Reliability
+
+As part of the project's evolution, `aiaddons` underwent a dedicated manual QA pass that identified and resolved real-world edge cases not caught by automated testing. This quality investment resulted in significant improvements to transactional safety—particularly around MCP server installation (preventing daemon-process hangs during failed installations), secret resolution correctness fixes across different terminal environments, and robust cross-platform input handling. Manual QA and real-world hardening remain integral parts of the project's ongoing quality lifecycle.
+
 ## Project Status
 
 `aiaddons` has achieved the complete **v1.0 Milestone**. All core package manager workflows—declarative installation, batch stack files, transactional removal with drift detection, automated updates with version swapping, workspace lockfile synchronization, 9-category system diagnostics, and an interactive Textual TUI—are fully operational and tested.
@@ -360,15 +376,17 @@ platform win32 -- Python 3.12.13, pytest-9.1.1, pluggy-1.5.0
 rootdir: C:\Users\Anuj Kumar\Desktop\add_ons
 configfile: pyproject.toml
 testpaths: tests
-collected 374 items
+collected 505 items
 
-370 passed, 4 skipped in 27.75s
+501 passed, 4 skipped in 46.36s
 =========================== lint & typecheck ===============================
 Ruff Linter: All checks passed!
 Mypy Strict: Checked 93 source files
 ```
 
 *(Note: 4 unit tests skipped conditionally on Windows due to symlink creation privileges without Developer Mode).*
+
+*(Note: Manual QA is actively incorporated into the project's ongoing quality and release process to ensure real-world reliability beyond automated testing).*
 
 ### Completed (v1.0 Milestone)
 
