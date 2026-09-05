@@ -10,6 +10,7 @@ from aiaddons.core.secrets.resolver import (
     InputProvider,
     SecretResolver,
     get_windows_clipboard_text,
+    mask_secret_preview,
     secure_prompt,
     win_getpass_with_paste,
 )
@@ -22,6 +23,7 @@ __all__ = [
     "SecretResolver",
     "SecretStatus",
     "get_windows_clipboard_text",
+    "mask_secret_preview",
     "secure_prompt",
     "win_getpass_with_paste",
 ]

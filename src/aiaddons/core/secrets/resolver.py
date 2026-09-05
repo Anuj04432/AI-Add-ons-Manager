@@ -2,6 +2,7 @@
 
 import getpass
 import os
+import re
 import sys
 from collections.abc import Callable
 from typing import Protocol
@@ -15,10 +16,68 @@ from aiaddons.core.secrets.models import (
 )
 
 
+_MAX_REPROMPT_ATTEMPTS: int = 3
+
+
+def mask_secret_preview(value: str) -> str:
+    """Create a partially-masked preview string for secret confirmation display.
+
+    Shows character count and selective head/tail characters so the user can
+    verify the captured input without exposing the full secret.
+
+    Rules:
+      - Length < 4:  show only first char  (e.g. "g*** (3 chars)")
+      - Length 4-7:  show first 1 + last 1 (e.g. "g*****5 (7 chars)")
+      - Length >= 8:  show first 3 + last 3 (e.g. "ghp****345 (10 chars)")
+    """
+    length = len(value)
+    if length == 0:
+        return "(empty)"
+    if length < 4:
+        masked = value[0] + "*" * (length - 1)
+    elif length < 8:
+        masked = value[0] + "*" * (length - 2) + value[-1]
+    else:
+        mid_len = length - 6
+        masked = value[:3] + "*" * mid_len + value[-3:]
+    return f"{masked} ({length} chars)"
+
+
+def validate_secret_format(value: str, spec: EnvVarSpec) -> list[str]:
+    """Check a value against an EnvVarSpec's optional format constraints.
+
+    Returns a list of human-readable warning strings. An empty list means
+    the value passes all declared format constraints.  These are advisory
+    warnings — callers should present them but not hard-block the user.
+    """
+    warnings: list[str] = []
+    length = len(value)
+
+    if spec.min_length is not None and length < spec.min_length:
+        warnings.append(
+            f"Value is too short ({length} chars, expected at least {spec.min_length})"
+        )
+
+    if spec.max_length is not None and length > spec.max_length:
+        warnings.append(
+            f"Value is too long ({length} chars, expected at most {spec.max_length})"
+        )
+
+    if spec.value_pattern is not None:
+        try:
+            if not re.fullmatch(spec.value_pattern, value):
+                fmt_hint = spec.format_description or f"pattern: {spec.value_pattern}"
+                warnings.append(f"Value doesn't match expected format ({fmt_hint})")
+        except re.error:
+            pass  # Invalid pattern in manifest — skip silently, don't punish user
+
+    return warnings
+
+
 class InputProvider(Protocol):
     """Protocol for secure interactive secret input prompting."""
 
-    def prompt_secret(self, env_name: str, description: str | None = None) -> str: ...
+    def prompt_secret(self, spec: EnvVarSpec) -> str: ...
 
 
 _original_getpass = getpass.getpass
@@ -152,8 +211,28 @@ class DefaultTTYInputProvider:
     def __init__(self, prompt_func: Callable[[str], str] | None = None) -> None:
         self._prompt_func = prompt_func
 
-    def prompt_secret(self, env_name: str, description: str | None = None) -> str:
-        """Prompt user securely without echoing input to terminal output."""
+    def _do_prompt(self, prompt_text: str) -> str:
+        """Execute the actual prompt, delegating to custom func or secure_prompt."""
+        if self._prompt_func is not None:
+            return self._prompt_func(prompt_text)
+        return secure_prompt(prompt_text)
+
+    def _print_feedback(self, message: str) -> None:
+        """Print user-visible feedback to stderr so it doesn't pollute stdout pipes."""
+        sys.stderr.write(message + "\n")
+        sys.stderr.flush()
+
+    def prompt_secret(self, spec: EnvVarSpec) -> str:
+        """Prompt user securely with empty-input rejection and masked confirmation.
+
+        On empty input, a clear error is shown and the user is re-prompted up to
+        ``_MAX_REPROMPT_ATTEMPTS`` times.  On successful capture, format validation
+        is performed. If warnings are present, the user is asked to confirm.
+        A partially-masked preview is displayed so the user can verify the value before it is used.
+        """
+        env_name = spec.name
+        description = spec.description
+
         prompt_lines = ["Secret required:", f"  {env_name}"]
         if description:
             prompt_lines.append(f"  ({description})")
@@ -161,10 +240,60 @@ class DefaultTTYInputProvider:
         prompt_lines.append("\nEnter value: ")
         prompt_text = "\n".join(prompt_lines)
 
-        if self._prompt_func is not None:
-            return self._prompt_func(prompt_text)
+        for attempt in range(_MAX_REPROMPT_ATTEMPTS):
+            raw_value = self._do_prompt(prompt_text)
+            stripped = raw_value.strip() if raw_value else ""
 
-        return secure_prompt(prompt_text)
+            if not stripped:
+                remaining = _MAX_REPROMPT_ATTEMPTS - attempt - 1
+                if remaining > 0:
+                    self._print_feedback(
+                        f"  No value was entered for {env_name} — "
+                        f"please try again or press Ctrl+C to cancel. "
+                        f"({remaining} attempt{'s' if remaining != 1 else ''} remaining)"
+                    )
+                    continue
+                else:
+                    raise SecretResolutionError(
+                        f"No value was entered for '{env_name}' after "
+                        f"{_MAX_REPROMPT_ATTEMPTS} attempts."
+                    )
+
+            # Format validation
+            warnings = validate_secret_format(stripped, spec)
+            if warnings:
+                self._print_feedback(f"\n  ⚠️  Warning: This doesn't look like a valid {env_name}.")
+                for w in warnings:
+                    self._print_feedback(f"     - {w}")
+                
+                # Ask for confirmation using standard input (not getpass)
+                self._print_feedback("\n  Continue anyway? [y/N]: ")
+                
+                # Use the established prompt flow so it respects mocks in tests.
+                # (We pass an empty prompt because we already printed the message above).
+                try:
+                    confirm = self._do_prompt("").strip().lower()
+                except (EOFError, KeyboardInterrupt):
+                    raise SecretResolutionError(f"Prompt cancelled for '{env_name}'.")
+
+                if confirm not in ("y", "yes"):
+                    remaining = _MAX_REPROMPT_ATTEMPTS - attempt - 1
+                    if remaining > 0:
+                        self._print_feedback(f"  Please try entering the {env_name} again.\n")
+                        continue
+                    else:
+                        raise SecretResolutionError(
+                            f"Invalid format for '{env_name}' rejected by user after "
+                            f"{_MAX_REPROMPT_ATTEMPTS} attempts."
+                        )
+
+            # Show masked confirmation preview
+            preview = mask_secret_preview(stripped)
+            self._print_feedback(f"  Received {env_name}: {preview}")
+            return stripped
+
+        # Should not reach here, but satisfy type checker
+        raise SecretResolutionError(f"No value was entered for '{spec.name}'.")
 
 
 class SecretResolver:
@@ -216,9 +345,7 @@ class SecretResolver:
 
                 if can_prompt:
                     try:
-                        prompted_val = self.input_provider.prompt_secret(
-                            spec.name, spec.description
-                        )
+                        prompted_val = self.input_provider.prompt_secret(spec)
                         if prompted_val and prompted_val.strip():
                             status = (
                                 SecretStatus.CONFIGURED if spec.secret else SecretStatus.NOT_SECRET
