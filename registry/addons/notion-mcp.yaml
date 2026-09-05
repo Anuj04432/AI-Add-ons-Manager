@@ -1,20 +1,21 @@
 id: notion-mcp
 name: Notion MCP Server
 version: 1.0.0
-description: Official Model Context Protocol server for Notion workspace integration, page management, and database queries.
+description: Official Model Context Protocol server for Notion workspace integration,
+  page management, and database queries.
 documentation_url: https://github.com/makenotion/notion-mcp-server
 license: MIT
 category: productivity
 integration_type: mcp
 target_agents:
-  - "*"
+  - '*'
 supported_scopes:
   - global
   - workspace
 source:
   source_type: package
-  package_name: "@notionhq/notion-mcp-server"
-  checksum: "sha256:c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4"
+  package_name: '@notionhq/notion-mcp-server'
+  checksum: sha256:c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4
 dependencies:
   - name: npx
     type: cli
@@ -37,9 +38,12 @@ handler_spec:
   mcp:
     transport: stdio
     runtime: npx
-    package_name: "@notionhq/notion-mcp-server"
+    package_name: '@notionhq/notion-mcp-server'
     env_vars:
       - name: NOTION_TOKEN
         required: true
         secret: true
         description: Notion integration token (obtain from notion.so/my-integrations)
+        value_pattern: ^(ntn|secret)_[a-zA-Z0-9_]+$
+        min_length: 40
+        format_description: starts with ntn_ or secret_
