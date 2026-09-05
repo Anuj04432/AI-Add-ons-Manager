@@ -34,6 +34,7 @@ from aiaddons.core.installer.models import (
 )
 from aiaddons.core.models.agent import AgentCapability, AgentDetectionResult, Scope
 from aiaddons.core.models.manifest import IntegrationManifest, IntegrationType
+from aiaddons.core.secrets.resolver import mask_secret_preview, validate_secret_format
 from aiaddons.core.update.engine import UpdateEngine, is_newer_version
 from aiaddons.core.update.models import UpdatePlan
 from aiaddons.core.verification.engine import VerificationEngine
@@ -46,6 +47,7 @@ from aiaddons.tui.screens.health import HealthScreen
 from aiaddons.tui.screens.modals import (
     DriftConfirmModal,
     RemoveConfirmModal,
+    SecretWarningModal,
     UpdatePlanModal,
 )
 from aiaddons.tui.screens.sync import SyncScreen
@@ -645,22 +647,48 @@ class AIAddonsTUIApp(App[None]):
     # -------------------------------------------------------------------------
     # Installation Execution
     # -------------------------------------------------------------------------
-    def _execute_real_installation(self) -> None:
+    def _execute_real_installation(self, force_secrets: bool = False) -> None:
         """Delegate installation execution directly to core ExecutionEngine & VerificationEngine."""
         if not self.selected_manifest or not self.selected_agent or not self.registry:
             return
 
         detail_view = self.query_one("#detail-view", Markdown)
 
-        # Collect secrets from hidden input fields
+        # Collect secrets from hidden input fields with masked confirmation
         secret_map: dict[str, str] = {}
+        all_warnings: list[str] = []
+
+        mcp_spec = self.selected_manifest.handler_spec.mcp
+        env_vars_map = {v.name: v for v in mcp_spec.env_vars} if mcp_spec else {}
+
         for name, inp in self.secret_inputs.items():
             val = inp.value.strip()
             if not val:
-                detail_view.update(f"## Installation Error\n\n❌ Secret '{name}' is required.")
-                self.notify(f"Secret '{name}' is required.", severity="error")
+                detail_view.update(
+                    f"## Installation Error\n\n❌ Secret '{name}' is required.\n\n"
+                    "No value was entered — please fill in the field and try again."
+                )
+                self.notify(f"Secret '{name}' is required. No value was entered.", severity="error")
                 return
+
+            spec = env_vars_map.get(name)
+            if spec and not force_secrets:
+                warnings = validate_secret_format(val, spec)
+                if warnings:
+                    all_warnings.append(f"{name}: " + ", ".join(warnings))
+
             secret_map[name] = val
+
+        if all_warnings and not force_secrets:
+            def handle_warning_result(confirmed: bool) -> None:
+                if confirmed:
+                    self._execute_real_installation(force_secrets=True)
+            self.push_screen(SecretWarningModal(all_warnings), callback=handle_warning_result)
+            return
+
+        for name, val in secret_map.items():
+            preview = mask_secret_preview(val)
+            self.notify(f"Received {name}: {preview}", severity="information")
 
         wal_mgr = TransactionWALManager(transactions_dir=self.store_dir / "transactions")
         state_store = InstalledStateStore(store_dir=self.store_dir)

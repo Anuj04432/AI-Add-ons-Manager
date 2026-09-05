@@ -253,3 +253,62 @@ class UpdatePlanModal(ModalScreen[bool]):
             self.dismiss(False)
         elif event.button.id == "btn-confirm-update":
             self.dismiss(True)
+
+
+class SecretWarningModal(ModalScreen[bool]):
+    """Confirmation modal for when secrets fail format validation."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel"),
+    ]
+
+    CSS = """
+    SecretWarningModal {
+        align: center middle;
+    }
+
+    #secret-warn-dialog {
+        width: 60%;
+        height: 60%;
+        border: thick $warning;
+        background: $surface;
+        padding: 1 2;
+    }
+
+    #secret-warn-content {
+        height: 1fr;
+    }
+    
+    .secret-warning-item {
+        margin: 1 0;
+    }
+    """
+
+    def __init__(self, warnings: list[str]) -> None:
+        super().__init__()
+        self.warnings = warnings
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="secret-warn-dialog"):
+            with VerticalScroll(id="secret-warn-content"):
+                yield Label("⚠️ Secret Format Warnings", classes="section-title")
+                yield Label(
+                    "The following secrets do not match their expected formats. "
+                    "This usually indicates a typo or incorrect token type.\n"
+                )
+                for w in self.warnings:
+                    yield Label(f"• {w}", classes="secret-warning-item")
+                
+                yield Label("\nAre you sure you want to proceed with these values?")
+            with Horizontal(classes="buttons-row"):
+                yield Button("Cancel", id="btn-cancel", variant="primary")
+                yield Button("Continue Anyway", id="btn-continue", variant="error")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "btn-continue":
+            self.dismiss(True)
+        else:
+            self.dismiss(False)
+
+    def action_cancel(self) -> None:
+        self.dismiss(False)
