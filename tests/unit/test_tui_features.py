@@ -1,4 +1,11 @@
-"""Comprehensive unit tests for Textual TUI screens, actions, modals, and navigation."""
+"""Comprehensive unit tests for Textual TUI screens, actions, modals, and navigation.
+
+NOTE: Textual TUI tests in this module rely on `pilot.pause()` and `_wait_for_screen()`. 
+When run as part of a massive test suite, or if the system is suspended/hibernated 
+during execution, these tests are known to occasionally fail with a `WaitForScreenTimeout` 
+due to asyncio event loop timer jumps. If these fail in CI, try re-running them 
+in isolation, where they are proven to pass reliably.
+"""
 
 from __future__ import annotations
 
