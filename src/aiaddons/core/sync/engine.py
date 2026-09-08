@@ -457,6 +457,7 @@ class SyncEngine:
                         plan=removal_plan,
                         dry_run=False,
                         is_removal=True,
+                        workspace_dir=resolved_ws,
                     )
                     if exec_res.status != ExecutionStatus.SUCCESS:
                         raise SyncError(
@@ -538,6 +539,7 @@ class SyncEngine:
                     transaction=tx,
                     dry_run=False,
                     secret_values=secret_values,
+                    workspace_dir=resolved_ws,
                 )
                 if exec_res.status != ExecutionStatus.SUCCESS:
                     raise SyncError(

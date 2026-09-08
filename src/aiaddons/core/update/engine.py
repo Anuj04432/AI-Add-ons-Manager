@@ -473,6 +473,7 @@ class UpdateEngine:
                 dry_run=False,
                 secret_values=secret_values,
                 registry=active_reg,
+                workspace_dir=ws_dir,
             )
 
             if exec_res.status != ExecutionStatus.SUCCESS:

@@ -164,11 +164,12 @@ class ExecutionEngine:
             runner=self.external_runner
         )
 
-    def _resolve_target_root(self, target_root: str | Path) -> str:
+    def _resolve_target_root(self, target_root: str | Path, workspace_dir: Path | None = None) -> str:
         """Resolve workspace root indicator ('.') to canonical workspace directory."""
+        ws_dir = (workspace_dir or self.workspace_dir).resolve()
         s = str(target_root)
         if s in (".", "./", ""):
-            return str(self.workspace_dir)
+            return str(ws_dir)
         return s
 
     def execute_plan(
@@ -179,8 +180,10 @@ class ExecutionEngine:
         secret_values: dict[str, str] | None = None,
         registry: Registry | None = None,
         is_removal: bool = False,
+        workspace_dir: Path | None = None,
     ) -> ExecutionResult:
         """Execute operations in an installation plan with safety validation and rollback."""
+        ws_dir = (workspace_dir or self.workspace_dir).resolve()
         plan.validate_safety()
         if transaction is not None:
             transaction.is_dry_run = dry_run
@@ -432,7 +435,7 @@ class ExecutionEngine:
                         )
                     if self.lockfile_manager and plan.target_scope == Scope.WORKSPACE:
                         self.lockfile_manager.remove_from_lockfile(
-                            self.workspace_dir,
+                            ws_dir,
                             target_agent=plan.target_agent,
                             addon_id=plan.addon_id,
                         )
@@ -462,7 +465,7 @@ class ExecutionEngine:
                             checksum=plan.source.checksum if plan.source else None,
                             installed_at=now_str,
                         )
-                        self.lockfile_manager.update_lockfile(self.workspace_dir, entry)
+                        self.lockfile_manager.update_lockfile(ws_dir, entry)
             except Exception as exc:
                 err_msg = f"State persistence error: {exc}"
                 if transaction:
@@ -516,8 +519,10 @@ class ExecutionEngine:
         dry_run: bool = False,
         secret_values: dict[str, str] | None = None,
         registry: Registry | None = None,
+        workspace_dir: Path | None = None,
     ) -> ExecutionResult:
         """Execute a batch of installation plans within ONE single WAL transaction and rollback stack."""
+        ws_dir = (workspace_dir or self.workspace_dir).resolve()
         batch_plan.validate_safety()
         if transaction is not None:
             transaction.is_dry_run = dry_run
@@ -765,7 +770,7 @@ class ExecutionEngine:
                             checksum=plan.source.checksum if plan.source else None,
                             installed_at=now_str,
                         )
-                        self.lockfile_manager.update_lockfile(self.workspace_dir, entry)
+                        self.lockfile_manager.update_lockfile(ws_dir, entry)
             except Exception as exc:
                 err_msg = f"State persistence error: {exc}"
                 if transaction:
@@ -821,8 +826,10 @@ class ExecutionEngine:
         dry_run: bool = False,
         secret_values: dict[str, str] | None = None,
         registry: Registry | None = None,
+        workspace_dir: Path | None = None,
     ) -> ExecutionResult:
         """Execute all removal and installation operations in an update plan within ONE atomic transaction."""
+        ws_dir = (workspace_dir or self.workspace_dir).resolve()
         update_plan.validate_safety()
         if transaction is not None:
             transaction.is_dry_run = dry_run
@@ -1148,7 +1155,7 @@ class ExecutionEngine:
                             checksum=plan.source.checksum if plan.source else None,
                             installed_at=now_str,
                         )
-                        self.lockfile_manager.update_lockfile(self.workspace_dir, entry)
+                        self.lockfile_manager.update_lockfile(ws_dir, entry)
             except Exception as exc:
                 err_msg = f"State persistence error: {exc}"
                 if transaction:

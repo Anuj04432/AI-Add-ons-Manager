@@ -776,7 +776,7 @@ def install_command(
     tx.phase = TransactionPhase.EXECUTING
     try:
         result = execution_engine.execute_batch_plan(
-            batch_plan, transaction=tx, dry_run=False, secret_values=secret_map
+            batch_plan, transaction=tx, dry_run=False, secret_values=secret_map, workspace_dir=workspace_dir
         )
     except SecurityValidationError as exc:
         _handle_error(

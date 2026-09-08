@@ -131,8 +131,10 @@ class VerificationEngine:
         op: BaseOperation,
         dry_run: bool = False,
         secret_values: dict[str, str] | None = None,
+        workspace_dir: Path | None = None,
     ) -> VerificationCheck:
         """Verify a single installation operation against the actual host state."""
+        ws_dir = (workspace_dir or self.workspace_dir).resolve()
         effective_root = self._resolve_target_root(op.target_root)
         secrets_list = list(secret_values.values()) if secret_values else []
         check_id = f"verify_{op.op_type.value}_{op.target_path or op.target_root}"
@@ -759,10 +761,12 @@ class VerificationEngine:
         plan: InstallationPlan,
         dry_run: bool = False,
         secret_values: dict[str, str] | None = None,
+        workspace_dir: Path | None = None,
     ) -> VerificationResult:
         """Deterministically verify whether the installation produced the state
         described by the installation plan.
         """
+        ws_dir = (workspace_dir or self.workspace_dir).resolve()
         secrets_list = list(secret_values.values()) if secret_values else []
 
         if dry_run:
@@ -841,8 +845,10 @@ class VerificationEngine:
     def verify_rollback(
         self,
         plan: InstallationPlan,
+        workspace_dir: Path | None = None,
     ) -> VerificationResult:
         """Verify that rollback left the host filesystem clean without target-root escapes."""
+        ws_dir = (workspace_dir or self.workspace_dir).resolve()
         checks: list[VerificationCheck] = []
         errors: list[str] = []
         all_clean = True
