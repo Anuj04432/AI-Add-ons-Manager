@@ -107,6 +107,7 @@ def test_execution_engine_structural_operations_success(
     engine = ExecutionEngine()
     result = engine.execute_plan(plan)
 
+    print(f"DEBUG_ERROR: {result.error_message}")
     assert result.status == ExecutionStatus.SUCCESS
     assert len(result.executed_operations) == 4
     assert (tmp_path / "skills/my-skill/SKILL.md").exists()
@@ -166,7 +167,7 @@ def test_transaction_lifecycle_state_transitions(
     engine = ExecutionEngine()
     result = engine.execute_plan(plan, transaction=tx)
 
-    assert result.status == ExecutionStatus.SUCCESS
+    assert result.status == ExecutionStatus.SUCCESS, result.error_message
     assert tx.phase == TransactionPhase.COMMITTED
 
 
@@ -246,7 +247,7 @@ def test_mcp_operation_execution_in_phase_5b2(tmp_path: Path, sample_source: Sou
     engine = ExecutionEngine()
     result = engine.execute_plan(plan, dry_run=True)
 
-    assert result.status == ExecutionStatus.SUCCESS
+    assert result.status == ExecutionStatus.SUCCESS, result.error_message
 
 
 def test_dry_run_performs_zero_filesystem_mutation_or_subprocess_calls(
@@ -286,3 +287,139 @@ def test_dry_run_performs_zero_filesystem_mutation_or_subprocess_calls(
 
     mock_subprocess.assert_not_called()
     assert not (tmp_path / "dry_run_dir").exists()
+
+def test_execute_update_plan_uses_explicit_workspace_dir(tmp_path: Path):
+    from aiaddons.core.execution.engine import ExecutionEngine
+    from aiaddons.core.update.models import UpdatePlan, UpdatePlanItem
+    from aiaddons.core.models.agent import Scope
+    from aiaddons.state.lockfile import LockfileManager
+    from unittest.mock import MagicMock
+    from aiaddons.core.models.agent import Scope
+    from aiaddons.state.lockfile import LockfileManager
+    
+    stale_dir = tmp_path / "stale"
+    stale_dir.mkdir()
+    actual_dir = tmp_path / "actual"
+    actual_dir.mkdir()
+    
+    lockfile_mgr = LockfileManager()
+    
+    # Initialize engine with the stale/default directory
+    engine = ExecutionEngine(
+        lockfile_manager=lockfile_mgr,
+        workspace_dir=stale_dir,
+    )
+    
+    # We use a mock to bypass strict Pydantic validation while testing ExecutionEngine logic
+    from aiaddons.core.models.manifest import SourceSpec, SourceType
+    
+    source = SourceSpec(source_type=SourceType.LOCAL, path="plugin-dir")
+    
+    install_plan_mock = MagicMock()
+    install_plan_mock.planned_operations = []
+    install_plan_mock.target_agent = "claude-code"
+    install_plan_mock.target_scope = Scope.WORKSPACE
+    install_plan_mock.addon_id = "test-addon"
+    install_plan_mock.addon_name = "Test Addon"
+    install_plan_mock.integration_type = "plugin"
+    install_plan_mock.addon_version = "2.0"
+    install_plan_mock.source = source
+    install_plan_mock.validate_safety.return_value = None
+    
+    removal_plan_mock = MagicMock()
+    removal_plan_mock.planned_operations = []
+    removal_plan_mock.target_agent = "claude-code"
+    removal_plan_mock.target_scope = Scope.WORKSPACE
+    removal_plan_mock.addon_id = "test-addon"
+    removal_plan_mock.addon_version = "1.0"
+    removal_plan_mock.source = source
+    removal_plan_mock.validate_safety.return_value = None
+    
+    plan_item = MagicMock()
+    plan_item.install_plan = install_plan_mock
+    plan_item.removal_plan = removal_plan_mock
+    plan_item.addon_id = "test-addon"
+    plan_item.target_version = "2.0"
+    
+    update_plan = MagicMock()
+    update_plan.items = [plan_item]
+    update_plan.target_agent = "claude-code"
+    update_plan.target_scope = Scope.WORKSPACE
+    update_plan.is_empty = False
+    update_plan.validate_safety.return_value = None
+    
+    from aiaddons.registry.models import IntegrationManifest
+    manifest_data = {
+        "id": "test-addon",
+        "name": "Test Addon",
+        "version": "2.0",
+        "description": "Test",
+        "license": "MIT",
+        "category": "developer-tools",
+        "integration_type": "plugin",
+        "target_agents": ["claude-code"],
+        "source": {"source_type": "local", "path": "."},
+        "trust": {"verification_status": "verified", "publisher": {"name": "Test"}},
+        "handler_spec": {"plugin": {}},
+    }
+    manifest = IntegrationManifest.model_validate(manifest_data)
+    
+    tx = MagicMock()
+    tx.is_dry_run = False
+    tx.transaction_id = "test-tx"
+    tx.model_dump_json.return_value = "{}"
+    tx.manifest = manifest
+    
+    engine.acquisition_engine = MagicMock()
+    engine.verification_engine = MagicMock()
+    
+    # Mock successful source acquisition
+    acq_res_mock = MagicMock()
+    engine.acquisition_engine.acquire_source.return_value = acq_res_mock
+    
+    # Mock successful verification
+    verif_res_mock = MagicMock()
+    verif_res_mock.verified = True
+    verif_res_mock.status = "SUCCESS"
+    engine.verification_engine.verify_plan.return_value = verif_res_mock
+    
+    # Execute update using the explicitly passed actual_dir
+    res = engine.execute_update_plan(
+        update_plan=update_plan,
+        transaction=tx,
+        dry_run=False,
+        workspace_dir=actual_dir
+    )
+    print(f"RESULT STATUS: {res.status}")
+    print(f"RESULT ERROR: {res.error_message}")
+    
+    # Verify that the stale dir's lockfile was NOT created
+    stale_lockfile = lockfile_mgr.get_lockfile_path(stale_dir)
+    assert not stale_lockfile.exists(), "Bug: Lockfile written to stale workspace_dir!"
+    
+    # Verify that the actual dir's lockfile WAS created and contains the entry
+    actual_lockfile = lockfile_mgr.get_lockfile_path(actual_dir)
+    assert actual_lockfile.exists(), "Fix failed: Lockfile not written to explicitly passed workspace_dir!"
+    entries = lockfile_mgr.get_entries(actual_dir)
+    assert len(entries) == 1
+    assert entries[0].addon_id == "test-addon"
+    assert entries[0].version == "2.0"
+    
+    # Execute update using the explicitly passed actual_dir
+    engine.execute_update_plan(
+        update_plan=update_plan,
+        dry_run=False,
+        workspace_dir=actual_dir
+    )
+    
+    # Verify that the stale dir's lockfile was NOT created
+    stale_lockfile = lockfile_mgr.get_lockfile_path(stale_dir)
+    assert not stale_lockfile.exists(), "Bug: Lockfile written to stale workspace_dir!"
+    
+    # Verify that the actual dir's lockfile WAS created and contains the entry
+    actual_lockfile = lockfile_mgr.get_lockfile_path(actual_dir)
+    assert actual_lockfile.exists(), "Fix failed: Lockfile not written to explicitly passed workspace_dir!"
+    entries = lockfile_mgr.get_entries(actual_dir)
+    assert len(entries) == 1
+    assert entries[0].addon_id == "test-addon"
+    assert entries[0].version == "2.0"
