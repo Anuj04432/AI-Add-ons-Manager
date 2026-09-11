@@ -49,7 +49,7 @@ def test_superpowers_composite_plugin_manifest_validates(registry_loader: Regist
     assert manifest.documentation_url == "https://github.com/obra/superpowers"
     assert manifest.source.source_type == SourceType.GIT
     assert manifest.source.url == "https://github.com/obra/superpowers.git"
-    assert manifest.source.commit_sha == "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b"
+    assert manifest.source.commit_sha == "b36e0829c6d0140e93cfef2ca599b1b07d4a7797"
     assert manifest.trust.verification_status == VerificationStatus.VERIFIED
     assert manifest.trust.publisher.name == "Jesse Vincent (@obra)"
     assert manifest.handler_spec.plugin is not None
@@ -67,13 +67,13 @@ def test_superpowers_composite_plugin_manifest_validates(registry_loader: Regist
 
 @pytest.mark.parametrize(
     "child_id,expected_skill_file",
-    [
-        ("superpowers-brainstorming", "skills/brainstorming/SKILL.md"),
-        ("superpowers-planning", "skills/writing-plans/SKILL.md"),
-        ("superpowers-worktree", "skills/git-worktree/SKILL.md"),
-        ("superpowers-tdd", "skills/test-driven-development/SKILL.md"),
-        ("superpowers-review", "skills/requesting-code-review/SKILL.md"),
-    ],
+        [
+            ("superpowers-brainstorming", "skills/brainstorming/SKILL.md"),
+            ("superpowers-planning", "skills/writing-plans/SKILL.md"),
+            ("superpowers-worktree", "skills/using-git-worktrees/SKILL.md"),
+            ("superpowers-tdd", "skills/test-driven-development/SKILL.md"),
+            ("superpowers-review", "skills/receiving-code-review/SKILL.md"),
+        ],
 )
 def test_superpowers_child_skills_validate(
     registry_loader: RegistryLoader, child_id: str, expected_skill_file: str
@@ -86,9 +86,9 @@ def test_superpowers_child_skills_validate(
     assert manifest.id == child_id
     assert manifest.integration_type == IntegrationType.SKILL
     assert manifest.source.source_type == SourceType.GIT
-    assert manifest.source.commit_sha == "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b"
-    assert manifest.handler_spec.skill is not None
-    assert manifest.handler_spec.skill.skill_file == expected_skill_file
+    assert manifest.source.commit_sha == "b36e0829c6d0140e93cfef2ca599b1b07d4a7797"
+    assert manifest.source.path == expected_skill_file.split("/SKILL.md")[0]
+    assert manifest.handler_spec.skill.skill_file == "SKILL.md"
 
 
 from aiaddons.core.compatibility.engine import CompatibilityEngine
@@ -166,11 +166,11 @@ def test_skill_creator_manifest_validates(registry_loader: RegistryLoader) -> No
     assert manifest.documentation_url == "https://github.com/anthropics/skills"
     assert manifest.source.source_type == SourceType.GIT
     assert manifest.source.url == "https://github.com/anthropics/skills.git"
-    assert manifest.source.commit_sha == "2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c"
+    assert manifest.source.commit_sha == "34040c9c568585f6929bedeaad110ad08f079624"
     assert manifest.trust.verification_status == VerificationStatus.VERIFIED
     assert manifest.trust.publisher.name == "Anthropic"
-    assert manifest.handler_spec.skill is not None
-    assert manifest.handler_spec.skill.skill_file == "skills/skill-creator/SKILL.md"
+    assert manifest.source.path == "skills/skill-creator"
+    assert manifest.handler_spec.skill.skill_file == "SKILL.md"
 
 
 def test_karpathy_behavioral_skill_manifest_validates(registry_loader: RegistryLoader) -> None:
@@ -187,7 +187,7 @@ def test_karpathy_behavioral_skill_manifest_validates(registry_loader: RegistryL
     assert manifest.documentation_url == "https://github.com/forrestchang/andrej-karpathy-skills"
     assert manifest.source.source_type == SourceType.GIT
     assert manifest.source.url == "https://github.com/forrestchang/andrej-karpathy-skills.git"
-    assert manifest.source.commit_sha == "3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d"
+    assert manifest.source.commit_sha == "2c606141936f1eeef17fa3043a72095b4765b9c2"
     assert manifest.trust.verification_status == VerificationStatus.VERIFIED
     assert manifest.trust.publisher.name == "Forrest Chang"
     assert manifest.handler_spec.skill is not None
@@ -208,7 +208,7 @@ def test_caveman_manifest_validates(registry_loader: RegistryLoader) -> None:
     assert manifest.documentation_url == "https://github.com/JuliusBrussee/caveman"
     assert manifest.source.source_type == SourceType.GIT
     assert manifest.source.url == "https://github.com/JuliusBrussee/caveman.git"
-    assert manifest.source.commit_sha == "4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e"
+    assert manifest.source.commit_sha == "15581d14007fd01fb3f132016741962f34936ca2"
     assert manifest.trust.verification_status == VerificationStatus.VERIFIED
     assert manifest.trust.publisher.name == "Julius Brussee"
     assert manifest.handler_spec.skill is not None
@@ -229,7 +229,7 @@ def test_vibesec_skill_manifest_validates(registry_loader: RegistryLoader) -> No
     assert manifest.documentation_url == "https://github.com/BehiSecc/VibeSec-Skill"
     assert manifest.source.source_type == SourceType.GIT
     assert manifest.source.url == "https://github.com/BehiSecc/VibeSec-Skill.git"
-    assert manifest.source.commit_sha == "5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f"
+    assert manifest.source.commit_sha == "0590993b35ad51961f65a4d01cf1196dfead05bb"
     assert manifest.trust.verification_status == VerificationStatus.VERIFIED
     assert manifest.trust.publisher.name == "BehiSecc"
     assert manifest.handler_spec.skill is not None
