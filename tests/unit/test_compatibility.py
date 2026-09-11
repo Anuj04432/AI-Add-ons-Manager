@@ -413,7 +413,7 @@ def test_python_lint_plugin_compatible_with_claude_code(
     )
 
     refactoring_skill = IntegrationManifest(
-        id="refactoring-skill",
+        id="caveman",
         name="Refactoring Skill",
         version="1.0.0",
         description="Python refactoring skill",
@@ -442,7 +442,7 @@ def test_python_lint_plugin_compatible_with_claude_code(
         source=SourceSpec(source_type=SourceType.LOCAL, path="plugins/python-lint"),
         trust=TrustMetadata(publisher=PublisherClaimSpec(name="Test")),
         handler_spec=HandlerSpecContainer(
-            plugin=PluginHandlerSpec(components=["ruff-cli", "refactoring-skill"])
+            plugin=PluginHandlerSpec(components=["ruff-cli", "caveman"])
         ),
     )
 
@@ -475,7 +475,7 @@ def test_python_lint_plugin_compatible_with_codex(
     )
 
     refactoring_skill = IntegrationManifest(
-        id="refactoring-skill",
+        id="caveman",
         name="Refactoring Skill",
         version="1.0.0",
         description="Python refactoring skill",
@@ -504,7 +504,7 @@ def test_python_lint_plugin_compatible_with_codex(
         source=SourceSpec(source_type=SourceType.LOCAL, path="plugins/python-lint"),
         trust=TrustMetadata(publisher=PublisherClaimSpec(name="Test")),
         handler_spec=HandlerSpecContainer(
-            plugin=PluginHandlerSpec(components=["ruff-cli", "refactoring-skill"])
+            plugin=PluginHandlerSpec(components=["ruff-cli", "caveman"])
         ),
     )
 
@@ -549,7 +549,7 @@ def test_composite_plugin_incompatible_child_rejected() -> None:
     )
 
     refactoring_skill = IntegrationManifest(
-        id="refactoring-skill",
+        id="caveman",
         name="Refactoring Skill",
         version="1.0.0",
         description="Python refactoring skill",
@@ -578,7 +578,7 @@ def test_composite_plugin_incompatible_child_rejected() -> None:
         source=SourceSpec(source_type=SourceType.LOCAL, path="plugins/composite"),
         trust=TrustMetadata(publisher=PublisherClaimSpec(name="Test")),
         handler_spec=HandlerSpecContainer(
-            plugin=PluginHandlerSpec(components=["refactoring-skill", "unsupported-mcp"])
+            plugin=PluginHandlerSpec(components=["caveman", "unsupported-mcp"])
         ),
     )
 

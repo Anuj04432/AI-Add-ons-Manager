@@ -35,4 +35,4 @@ handler_spec:
   plugin:
     components:
       - ruff-cli
-      - refactoring-skill
+      - caveman

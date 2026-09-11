@@ -51,9 +51,9 @@ handler_spec:
         encoding="utf-8",
     )
 
-    (reg_dir / "refactoring-skill.yaml").write_text(
+    (reg_dir / "caveman.yaml").write_text(
         """
-id: refactoring-skill
+id: caveman
 name: Refactoring Skill
 version: 0.8.0
 description: Code refactoring guidance skill.
@@ -66,7 +66,7 @@ supported_scopes:
   - workspace
 source:
   source_type: git
-  repository: https://github.com/test/refactoring-skill
+  repository: https://github.com/test/caveman
   commit_sha: 4a2d8f9e1c3b5a7d9e0f2a4b6c8d0e1f2a3b4c5d
 trust:
   verification_status: community
@@ -89,7 +89,7 @@ def test_cli_list(sample_registry_dir: Path) -> None:
     result = runner.invoke(app, ["list", "--registry-dir", str(sample_registry_dir)])
     assert result.exit_code == 0
     assert "github-mcp" in result.stdout
-    assert "refactoring-skill" in result.stdout
+    assert "caveman" in result.stdout
 
 
 def test_cli_list_json(sample_registry_dir: Path) -> None:
@@ -99,7 +99,7 @@ def test_cli_list_json(sample_registry_dir: Path) -> None:
     parsed = json.loads(result.stdout)
     assert isinstance(parsed, list)
     assert len(parsed) == 2
-    assert parsed[0]["id"] in ("github-mcp", "refactoring-skill")
+    assert parsed[0]["id"] in ("github-mcp", "caveman")
 
 
 def test_cli_list_filter_type(sample_registry_dir: Path) -> None:
@@ -109,7 +109,7 @@ def test_cli_list_filter_type(sample_registry_dir: Path) -> None:
     )
     assert result.exit_code == 0
     assert "github-mcp" in result.stdout
-    assert "refactoring-skill" not in result.stdout
+    assert "caveman" not in result.stdout
 
 
 def test_cli_search(sample_registry_dir: Path) -> None:
@@ -117,7 +117,7 @@ def test_cli_search(sample_registry_dir: Path) -> None:
     result = runner.invoke(app, ["search", "github", "--registry-dir", str(sample_registry_dir)])
     assert result.exit_code == 0
     assert "github-mcp" in result.stdout
-    assert "refactoring-skill" not in result.stdout
+    assert "caveman" not in result.stdout
 
 
 def test_cli_search_json(sample_registry_dir: Path) -> None:

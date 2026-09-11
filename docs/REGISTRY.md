@@ -25,7 +25,7 @@ registry/
     ├── github-mcp.yaml
     ├── postgres-mcp.yaml
     ├── python-lint-plugin.yaml
-    └── refactoring-skill.yaml
+    └── caveman.yaml
 ```
 
 ---
@@ -82,7 +82,7 @@ handler_spec:
 ```
 
 ### Key Field Descriptions
-- **`id`**: Unique kebab-case identifier (e.g., `github-mcp`, `refactoring-skill`).
+- **`id`**: Unique kebab-case identifier (e.g., `github-mcp`, `caveman`).
 - **`integration_type`**: Type of integration (`mcp`, `skill`, `plugin`, `cli_tool`).
 - **`target_agents`**: List of target AI agent IDs supported by this integration (`claude-code`, `codex`, or `*` for all).
 - **`supported_scopes`**: Scopes allowed for installation (`global`, `workspace`).

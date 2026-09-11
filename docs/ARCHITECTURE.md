@@ -473,7 +473,7 @@ Built with **Textual**:
 │   DevTools      │ [x] github-mcp-server        MCP       DevTools       ✓ Compatible    [Installed]    │
 │   Database      │ [x] postgres-mcp             MCP       Database       ✓ Compatible    [Update Avail] │
 │   Web           │ [ ] brave-search-mcp         MCP       Web            ✓ Compatible    [Not Installed]│
-│   Workflow      │ [ ] refactoring-skill        Skill     Workflow       ✓ Compatible    [Not Installed]│
+│   Workflow      │ [ ] caveman        Skill     Workflow       ✓ Compatible    [Not Installed]│
 ├─────────────────┴──────────────────────────────────────────────────────────────────────────────────────┤
 │ DETAIL: postgres-mcp (v1.1.0) by Model Context Protocol Team [Verified]                                │
 │ Allows AI agent to query database schemas, inspect tables, and safely execute read-only queries.       │

@@ -130,7 +130,7 @@ Install multiple MCP servers, skills, and plugins across your workspace in a sin
 
 ```bash
 # Install multiple add-ons at once for detected agents
-aiaddons install github-mcp postgres-mcp code-reviewer refactoring-skill --scope workspace
+aiaddons install github-mcp postgres-mcp code-reviewer caveman --scope workspace
 
 # Or declare your entire team stack in a YAML/JSON file and install it in one step:
 aiaddons install --file team-stack.yaml
@@ -204,7 +204,7 @@ aiaddons tui
 The built-in registry currently provides **30 integrations** out of the box, covering a wide spectrum of tools for AI agents. Since the last major update, the registry has been expanded significantly:
 
 * **Newly Added MCP Servers**: `firecrawl-mcp`, `sequential-thinking-mcp`, `notion-mcp`, `linear-mcp`, `figma-mcp`, `github-mcp`, `postgres-mcp`, `brave-search-mcp`, `filesystem-mcp`, `playwright-mcp`, `context7-mcp`
-* **Agent Skills**: Dozens of workflow skills including `refactoring-skill`, `ponytail-audit-skill`, and other behavioral tools.
+* **Agent Skills**: Dozens of workflow skills including `caveman`, `ponytail-audit-skill`, and other behavioral tools.
 
 Additionally, `aiaddons` includes **2 pre-configured stacks** (`dev-starter-stack.yaml`, `agent-behavior-stack.yaml`) in `registry/stacks/` to help quickly bootstrap a team environment.
 
@@ -321,11 +321,11 @@ handler_spec:
         description: GitHub Personal Access Token with repository scope
 ```
 
-### Minimal Agent Skill Manifest (`refactoring-skill.yaml`)
+### Minimal Agent Skill Manifest (`caveman.yaml`)
 
 ```yaml
-id: refactoring-skill
-name: Automated Code Refactoring Skill
+id: caveman
+name: Caveman Output Compression Skill
 version: 0.8.1
 description: Standardized refactoring patterns and clean architecture workflows for coding agents.
 documentation_url: https://aiaddons.dev/skills/refactoring
@@ -338,7 +338,7 @@ supported_scopes:
   - workspace
 source:
   source_type: git
-  repository: https://github.com/aiaddons/refactoring-skill
+  url: https://github.com/JuliusBrussee/caveman.git
   ref: v0.8.1
   commit_sha: 4a2d8f9e1c3b5a7d9e0f2a4b6c8d0e1f2a3b4c5d
 dependencies: []

@@ -82,7 +82,7 @@ def populated_cache_dir(tmp_path: Path) -> Path:
         tags=["python", "plugin", "linter"],
         handler_spec=HandlerSpecContainer(
             plugin=PluginHandlerSpec(
-                components=["ruff-cli", "refactoring-skill"],
+                components=["ruff-cli", "caveman"],
             )
         ),
     )
@@ -182,4 +182,4 @@ def test_cli_info_composite_plugin(populated_cache_dir: Path) -> None:
         assert "Python Lint Composite Plugin" in result.stdout
         assert "Composite Plugin Components" in result.stdout
         assert "ruff-cli" in result.stdout
-        assert "refactoring-skill" in result.stdout
+        assert "caveman" in result.stdout
