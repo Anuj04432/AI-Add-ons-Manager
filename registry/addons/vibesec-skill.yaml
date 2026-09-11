@@ -1,21 +1,22 @@
 id: vibesec-skill
 name: VibeSec Security & Vulnerability Prevention Skill
 version: 1.0.0
-description: Security auditor persona preventing common AI-generated vulnerabilities (IDORs, injection, hardcoded secrets, and XSS).
+description: Security auditor persona preventing common AI-generated vulnerabilities
+  (IDORs, injection, hardcoded secrets, and XSS).
 documentation_url: https://github.com/BehiSecc/VibeSec-Skill
 license: MIT
 category: security
 integration_type: skill
 target_agents:
-  - "*"
+- '*'
 supported_scopes:
-  - global
-  - workspace
+- global
+- workspace
 source:
   source_type: git
   url: https://github.com/BehiSecc/VibeSec-Skill.git
   ref: main
-  commit_sha: 5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f
+  commit_sha: 0590993b35ad51961f65a4d01cf1196dfead05bb
 dependencies: []
 trust:
   verification_status: verified
@@ -24,11 +25,11 @@ trust:
     url: https://github.com/BehiSecc
     declared_verified: true
 tags:
-  - security
-  - vibesec
-  - vulnerability-prevention
-  - appsec
-  - auditing
+- security
+- vibesec
+- vulnerability-prevention
+- appsec
+- auditing
 handler_spec:
   skill:
     skill_file: SKILL.md

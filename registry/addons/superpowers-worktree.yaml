@@ -1,25 +1,27 @@
 id: superpowers-worktree
 name: Superpowers Git Worktree Skill
 version: 1.0.0
-description: Manages isolated git worktree directories for clean task execution without workspace pollution.
+description: Manages isolated git worktree directories for clean task execution without
+  workspace pollution.
 documentation_url: https://github.com/obra/superpowers
 license: MIT
 category: workflow
 integration_type: skill
 target_agents:
-  - "*"
+- '*'
 supported_scopes:
-  - global
-  - workspace
+- global
+- workspace
 source:
   source_type: git
   url: https://github.com/obra/superpowers.git
-  ref: v1.0.0
-  commit_sha: 1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b
+  ref: main
+  commit_sha: b36e0829c6d0140e93cfef2ca599b1b07d4a7797
+  path: skills/using-git-worktrees
 dependencies:
-  - name: git
-    type: cli
-    required: true
+- name: git
+  type: cli
+  required: true
 trust:
   verification_status: verified
   publisher:
@@ -27,12 +29,12 @@ trust:
     url: https://github.com/obra
     declared_verified: true
   allowed_executables:
-    - git
-tags:
-  - superpowers
   - git
-  - worktree
-  - skill
+tags:
+- superpowers
+- git
+- worktree
+- skill
 handler_spec:
   skill:
-    skill_file: skills/git-worktree/SKILL.md
+    skill_file: SKILL.md

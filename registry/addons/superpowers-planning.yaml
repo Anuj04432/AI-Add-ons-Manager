@@ -1,21 +1,23 @@
 id: superpowers-planning
 name: Superpowers Planning Skill
 version: 1.0.0
-description: Decomposes complex tasks into bite-sized 2-5 minute implementation steps with verifiable deliverables.
+description: Decomposes complex tasks into bite-sized 2-5 minute implementation steps
+  with verifiable deliverables.
 documentation_url: https://github.com/obra/superpowers
 license: MIT
 category: workflow
 integration_type: skill
 target_agents:
-  - "*"
+- '*'
 supported_scopes:
-  - global
-  - workspace
+- global
+- workspace
 source:
   source_type: git
   url: https://github.com/obra/superpowers.git
-  ref: v1.0.0
-  commit_sha: 1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b
+  ref: main
+  commit_sha: b36e0829c6d0140e93cfef2ca599b1b07d4a7797
+  path: skills/writing-plans
 dependencies: []
 trust:
   verification_status: verified
@@ -24,10 +26,10 @@ trust:
     url: https://github.com/obra
     declared_verified: true
 tags:
-  - superpowers
-  - planning
-  - roadmap
-  - skill
+- superpowers
+- planning
+- roadmap
+- skill
 handler_spec:
   skill:
-    skill_file: skills/writing-plans/SKILL.md
+    skill_file: SKILL.md

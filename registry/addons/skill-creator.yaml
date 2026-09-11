@@ -1,23 +1,25 @@
 id: skill-creator
 name: Anthropic Skill Creator Meta-Skill
 version: 1.0.0
-description: Official Anthropic meta-skill for interactively scaffolding, evaluating, and optimizing SKILL.md bundles.
+description: Official Anthropic meta-skill for interactively scaffolding, evaluating,
+  and optimizing SKILL.md bundles.
 documentation_url: https://github.com/anthropics/skills
 license: MIT
 category: developer-tools
 integration_type: skill
 target_agents:
-  - claude-code
-  - codex
-  - antigravity
+- claude-code
+- codex
+- antigravity
 supported_scopes:
-  - global
-  - workspace
+- global
+- workspace
 source:
   source_type: git
   url: https://github.com/anthropics/skills.git
   ref: main
-  commit_sha: 2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c
+  commit_sha: 34040c9c568585f6929bedeaad110ad08f079624
+  path: skills/skill-creator
 dependencies: []
 trust:
   verification_status: verified
@@ -26,10 +28,10 @@ trust:
     url: https://github.com/anthropics
     declared_verified: true
 tags:
-  - anthropic
-  - skill-creator
-  - meta-skill
-  - scaffolding
+- anthropic
+- skill-creator
+- meta-skill
+- scaffolding
 handler_spec:
   skill:
-    skill_file: skills/skill-creator/SKILL.md
+    skill_file: SKILL.md

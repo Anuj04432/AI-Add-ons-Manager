@@ -1,21 +1,23 @@
 id: superpowers-tdd
 name: Superpowers Test-Driven Development Skill
 version: 1.0.0
-description: Enforces fail-first test-driven development discipline with verify-fail-implement-verify loops.
+description: Enforces fail-first test-driven development discipline with verify-fail-implement-verify
+  loops.
 documentation_url: https://github.com/obra/superpowers
 license: MIT
 category: testing
 integration_type: skill
 target_agents:
-  - "*"
+- '*'
 supported_scopes:
-  - global
-  - workspace
+- global
+- workspace
 source:
   source_type: git
   url: https://github.com/obra/superpowers.git
-  ref: v1.0.0
-  commit_sha: 1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b
+  ref: main
+  commit_sha: b36e0829c6d0140e93cfef2ca599b1b07d4a7797
+  path: skills/test-driven-development
 dependencies: []
 trust:
   verification_status: verified
@@ -24,10 +26,10 @@ trust:
     url: https://github.com/obra
     declared_verified: true
 tags:
-  - superpowers
-  - tdd
-  - testing
-  - skill
+- superpowers
+- tdd
+- testing
+- skill
 handler_spec:
   skill:
-    skill_file: skills/test-driven-development/SKILL.md
+    skill_file: SKILL.md
