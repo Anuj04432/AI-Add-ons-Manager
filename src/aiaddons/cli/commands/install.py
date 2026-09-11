@@ -945,7 +945,7 @@ def install_command(
             _print_json(formatted)
         else:
             console.print()
-            console.print("[bold red]Verification failed.[/bold red]")
+            console.print(f"[bold red]Installation failed: {safe_err}[/bold red]")
             console.print()
             console.print("[bold yellow]Rolling back installation...[/bold yellow]")
             if result.rolled_back_operations:

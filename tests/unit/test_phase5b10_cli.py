@@ -341,6 +341,6 @@ def test_cli_install_verification_failure_rollback(tmp_path: Path) -> None:
 
         result = runner.invoke(app, ["install", "github-mcp", "--yes", "--registry", str(reg_dir)])
         assert result.exit_code == ExitCode.VERIFICATION_FAILURE
-        assert "Verification failed." in result.stdout
+        assert "Installation failed:" in result.stdout
         assert "Rolling back installation..." in result.stdout
         assert "Rollback completed" in result.stdout
