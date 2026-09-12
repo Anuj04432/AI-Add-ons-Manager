@@ -158,6 +158,10 @@ aiaddons sync
 aiaddons sync --prune --update
 ```
 
+> [!NOTE]
+> **Committing `aiaddons.lock`**
+> End users of `aiaddons` are encouraged to commit `aiaddons.lock` to their own project's version control to guarantee a reproducible team stack of AI agent capabilities. However, if you are developing or testing `aiaddons` *itself* (i.e., within this repository), `aiaddons.lock` is explicitly `.gitignore`d to prevent local test fixtures and experimental installations from polluting the main project history.
+
 ### 3. Update & Version Upgrades
 
 Keep your AI agent capabilities up to date with automated SemVer checks and atomic rollback safety:

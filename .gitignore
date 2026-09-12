@@ -16,3 +16,4 @@ uv.lock
 .claude/
 .agents/
 .codex/
+aiaddons.lock
