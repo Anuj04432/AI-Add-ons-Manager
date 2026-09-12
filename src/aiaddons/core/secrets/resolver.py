@@ -337,6 +337,31 @@ class SecretResolver:
                     break
 
         if val is not None:
+            warnings = validate_secret_format(val, spec)
+            if warnings:
+                if not allow_interactive:
+                    msg = f"Value for '{spec.name}' failed format validation:\n"
+                    for w in warnings:
+                        msg += f"  - {w}\n"
+                    raise SecretResolutionError(msg.strip())
+                else:
+                    if isinstance(self.input_provider, DefaultTTYInputProvider):
+                        self.input_provider._print_feedback(f"\n  ⚠️  Warning: Pre-set environment variable {spec.name} doesn't look valid.")
+                        for w in warnings:
+                            self.input_provider._print_feedback(f"     - {w}")
+                        self.input_provider._print_feedback("\n  Continue anyway with this value? [y/N]: ")
+                        try:
+                            confirm = self.input_provider._do_prompt("").strip().lower()
+                        except (EOFError, KeyboardInterrupt):
+                            raise SecretResolutionError(f"Prompt cancelled for '{spec.name}'.")
+                        
+                        if confirm not in ("y", "yes"):
+                            val = None
+                    else:
+                        sys.stderr.write(f"\n  ⚠️  Warning: Pre-set environment variable {spec.name} doesn't look valid. Ignoring it.\n")
+                        val = None
+
+        if val is not None:
             status = SecretStatus.CONFIGURED if spec.secret else SecretStatus.NOT_SECRET
             return ResolvedSecret(
                 name=spec.name,
