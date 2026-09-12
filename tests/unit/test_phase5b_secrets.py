@@ -102,6 +102,43 @@ def test_secret_resolution_interactive_prompt() -> None:
     mock_input_provider.prompt_secret.assert_called_once_with(spec)
 
 
+def test_secret_resolution_env_var_invalid_non_interactive() -> None:
+    """Verify validation failure for environment variable in non-interactive mode raises error."""
+    resolver = SecretResolver()
+    spec = EnvVarSpec(
+        name="GITHUB_TOKEN",
+        secret=True,
+        required=True,
+        min_length=10,
+        value_pattern="^ghp_.*",
+    )
+    with pytest.raises(SecretResolutionError, match="failed format validation"):
+        resolver.resolve_spec(
+            spec,
+            allow_interactive=False,
+            override_env={"GITHUB_TOKEN": "xx"},
+        )
+
+
+def test_secret_resolution_env_var_valid_non_interactive() -> None:
+    """Verify well-formed environment variable passes validation cleanly."""
+    resolver = SecretResolver()
+    spec = EnvVarSpec(
+        name="GITHUB_TOKEN",
+        secret=True,
+        required=True,
+        min_length=10,
+        value_pattern="^ghp_.*",
+    )
+    res = resolver.resolve_spec(
+        spec,
+        allow_interactive=False,
+        override_env={"GITHUB_TOKEN": "ghp_valid_token_12345"},
+    )
+    assert res.status == SecretStatus.CONFIGURED
+    assert res.value == "ghp_valid_token_12345"
+
+
 def test_secret_resolver_summary() -> None:
     """Verify non-sensitive summary generation."""
     resolver = SecretResolver()
