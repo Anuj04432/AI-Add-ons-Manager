@@ -1,0 +1,53 @@
+id: heroku-mcp
+name: Heroku Platform MCP Server
+version: 1.2.9
+description: Official Heroku Platform Model Context Protocol server for managing apps, dynos, add-ons, pipelines, and PostgreSQL databases.
+documentation_url: https://github.com/heroku/heroku-mcp-server
+license: MIT
+category: developer-tools
+integration_type: mcp
+target_agents:
+  - '*'
+supported_scopes:
+  - global
+  - workspace
+source:
+  source_type: package
+  package_name: '@heroku/mcp-server'
+  checksum: sha256:a8bbd5c938304e6e0028ca9e6edc457827efd364fced6ee97e9cc1ed79657904
+dependencies:
+  - name: npx
+    type: cli
+    required: true
+trust:
+  verification_status: verified
+  publisher:
+    name: Heroku
+    url: https://github.com/heroku
+    declared_verified: true
+  allowed_executables:
+    - npx
+tags:
+  - heroku
+  - cloud
+  - deployment
+  - devops
+  - mcp
+handler_spec:
+  mcp:
+    transport: stdio
+    runtime: npx
+    package_name: '@heroku/mcp-server'
+    env_vars:
+      - name: HEROKU_API_KEY
+        required: true
+        secret: true
+        description: Heroku API authorization token (obtain from Account Settings or heroku auth:token)
+        min_length: 20
+        format_description: minimum 20 characters
+      - name: MCP_SERVER_REQUEST_TIMEOUT
+        required: false
+        secret: false
+        description: Command execution timeout in milliseconds (defaults to 15000)
+        value_pattern: ^[0-9]+$
+        format_description: numeric millisecond timeout

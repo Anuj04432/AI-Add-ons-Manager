@@ -1,0 +1,40 @@
+id: filesystem-mcp
+name: Filesystem MCP Server
+version: 2026.8.31
+description: Reference Model Context Protocol server for local filesystem access, file inspection, and directory browsing.
+documentation_url: https://github.com/modelcontextprotocol/servers
+license: MIT
+category: developer-tools
+integration_type: mcp
+target_agents:
+  - '*'
+supported_scopes:
+  - global
+  - workspace
+source:
+  source_type: package
+  package_name: '@modelcontextprotocol/server-filesystem'
+  checksum: sha256:a239da270c403c42eb03e1ca7cca07c858085819797b74856ddbb91b50491b1a
+dependencies:
+  - name: npx
+    type: cli
+    required: true
+trust:
+  verification_status: verified
+  publisher:
+    name: Model Context Protocol Team
+    url: https://github.com/modelcontextprotocol
+    declared_verified: true
+  allowed_executables:
+    - npx
+tags:
+  - filesystem
+  - file-management
+  - mcp
+  - developer-tools
+handler_spec:
+  mcp:
+    transport: stdio
+    runtime: npx
+    package_name: '@modelcontextprotocol/server-filesystem'
+    env_vars: []

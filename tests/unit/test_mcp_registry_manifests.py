@@ -122,7 +122,7 @@ def test_postgres_mcp_manifest_validates(registry_loader: RegistryLoader) -> Non
     manifest = registry_loader.load_file(file_path)
     assert manifest.id == "postgres-mcp"
     assert manifest.name == "PostgreSQL Database MCP Server"
-    assert manifest.version == "1.1.0"
+    assert manifest.version == "0.6.2"
     assert manifest.integration_type == IntegrationType.MCP
     assert manifest.category == "database"
     assert manifest.source.package_name == "@modelcontextprotocol/server-postgres"
@@ -167,7 +167,7 @@ def test_brave_search_mcp_manifest_validates(registry_loader: RegistryLoader) ->
     manifest = registry_loader.load_file(file_path)
     assert manifest.id == "brave-search-mcp"
     assert manifest.name == "Brave Search MCP Server"
-    assert manifest.version == "1.0.0"
+    assert manifest.version == "0.6.2"
     assert manifest.integration_type == IntegrationType.MCP
     assert manifest.category == "search"
     assert manifest.source.package_name == "@modelcontextprotocol/server-brave-search"
@@ -269,34 +269,10 @@ def test_notion_mcp_manifest_validates(registry_loader: RegistryLoader) -> None:
     assert env_vars[0].secret is True
 
 
-def test_linear_mcp_manifest_validates(registry_loader: RegistryLoader) -> None:
-    """Verify linear-mcp manifest loads with @ibraheem4/linear-mcp and LINEAR_API_KEY secret."""
+def test_linear_mcp_is_blocked_and_removed_from_live_registry() -> None:
+    """Verify linear-mcp is blocked and removed from the live registry due to broken package."""
     file_path = MANIFESTS_DIR / "linear-mcp.yaml"
-    assert file_path.exists()
-
-    manifest = registry_loader.load_file(file_path)
-    assert manifest.id == "linear-mcp"
-    assert manifest.name == "Linear MCP Server"
-    assert manifest.version == "1.0.0"
-    assert manifest.integration_type == IntegrationType.MCP
-    assert manifest.category == "project-management"
-    assert manifest.documentation_url == "https://github.com/jerhadf/linear-mcp-server"
-    assert manifest.source.source_type == SourceType.PACKAGE
-    assert manifest.source.package_name == "@ibraheem4/linear-mcp"
-    assert manifest.source.checksum and manifest.source.checksum.startswith("sha256:")
-    assert manifest.trust.verification_status == VerificationStatus.COMMUNITY
-    assert manifest.trust.publisher.name == "Ibraheem Adams"
-    assert manifest.trust.allowed_executables == ["npx"]
-    assert manifest.handler_spec.mcp is not None
-    assert manifest.handler_spec.mcp.runtime == MCPRuntime.NPX
-    assert manifest.handler_spec.mcp.transport == MCPTransport.STDIO
-    assert manifest.handler_spec.mcp.package_name == "@ibraheem4/linear-mcp"
-
-    env_vars = manifest.handler_spec.mcp.env_vars
-    assert len(env_vars) == 1
-    assert env_vars[0].name == "LINEAR_API_KEY"
-    assert env_vars[0].required is True
-    assert env_vars[0].secret is True
+    assert not file_path.exists(), "linear-mcp.yaml must not be present in live registry (blocked)"
 
 
 def test_figma_mcp_manifest_validates(registry_loader: RegistryLoader) -> None:
@@ -444,7 +420,6 @@ def test_supabase_mcp_manifest_validates(registry_loader: RegistryLoader) -> Non
         "firecrawl-mcp.yaml",
         "sequential-thinking-mcp.yaml",
         "notion-mcp.yaml",
-        "linear-mcp.yaml",
         "figma-mcp.yaml",
         "stripe-mcp.yaml",
         "sentry-mcp.yaml",
@@ -452,7 +427,7 @@ def test_supabase_mcp_manifest_validates(registry_loader: RegistryLoader) -> Non
     ],
 )
 def test_manifest_rejects_extra_unrecognized_fields(manifest_file: str) -> None:
-    """Ensure extra='forbid' rejects any undeclared or invented fields across all 14 manifests."""
+    """Ensure extra='forbid' rejects any undeclared or invented fields across all 13 manifests."""
     file_path = MANIFESTS_DIR / manifest_file
     raw_dict = yaml.safe_load(file_path.read_text(encoding="utf-8"))
     raw_dict["unauthorized_custom_field"] = "malicious_payload"
@@ -473,7 +448,6 @@ def test_manifest_rejects_extra_unrecognized_fields(manifest_file: str) -> None:
         "firecrawl-mcp.yaml",
         "sequential-thinking-mcp.yaml",
         "notion-mcp.yaml",
-        "linear-mcp.yaml",
         "figma-mcp.yaml",
         "stripe-mcp.yaml",
         "sentry-mcp.yaml",

@@ -207,7 +207,7 @@ aiaddons tui
 
 The built-in registry currently provides **30 integrations** out of the box, covering a wide spectrum of tools for AI agents. Since the last major update, the registry has been expanded significantly:
 
-* **Newly Added MCP Servers**: `firecrawl-mcp`, `sequential-thinking-mcp`, `notion-mcp`, `linear-mcp`, `figma-mcp`, `github-mcp`, `postgres-mcp`, `brave-search-mcp`, `filesystem-mcp`, `playwright-mcp`, `context7-mcp`
+* **Newly Added MCP Servers**: `stripe-mcp`, `sentry-mcp`, `supabase-mcp`, `firecrawl-mcp`, `sequential-thinking-mcp`, `notion-mcp`, `figma-mcp`, `github-mcp`, `postgres-mcp`, `brave-search-mcp`, `filesystem-mcp`, `playwright-mcp`, `context7-mcp`
 * **Agent Skills**: Dozens of workflow skills including `caveman`, `ponytail-audit-skill`, and other behavioral tools.
 
 Additionally, `aiaddons` includes **2 pre-configured stacks** (`dev-starter-stack.yaml`, `agent-behavior-stack.yaml`) in `registry/stacks/` to help quickly bootstrap a team environment.

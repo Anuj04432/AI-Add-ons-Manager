@@ -1,0 +1,47 @@
+id: qase-mcp
+name: Qase TMS MCP Server
+version: 2.7.4
+description: Official Qase Test Management Platform MCP server for managing test cases, runs, suites, defects, and CI reporting with QQL.
+documentation_url: https://github.com/qase-tms/qase-mcp-server
+license: MIT
+category: developer-tools
+integration_type: mcp
+target_agents:
+  - '*'
+supported_scopes:
+  - global
+  - workspace
+source:
+  source_type: package
+  package_name: '@qase/mcp-server'
+  checksum: sha256:5479b00153f9c49619222a76fbe618215ce433a66e72113860c0bdb0bdd398ca
+dependencies:
+  - name: npx
+    type: cli
+    required: true
+trust:
+  verification_status: verified
+  publisher:
+    name: Qase
+    url: https://github.com/qase-tms
+    declared_verified: true
+  allowed_executables:
+    - npx
+tags:
+  - qase
+  - testing
+  - test-management
+  - qa
+  - mcp
+handler_spec:
+  mcp:
+    transport: stdio
+    runtime: npx
+    package_name: '@qase/mcp-server'
+    env_vars:
+      - name: QASE_API_TOKEN
+        required: true
+        secret: true
+        description: Qase API token (obtain from app.qase.io/user/api/tokens)
+        min_length: 30
+        format_description: minimum 30 characters

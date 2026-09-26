@@ -1,0 +1,47 @@
+id: context7-mcp
+name: Context7 Documentation MCP Server
+version: 4.1.1
+description: Real-time, version-specific library and API documentation lookup for AI coding agents.
+documentation_url: https://github.com/upstash/context7
+license: MIT
+category: documentation
+integration_type: mcp
+target_agents:
+  - '*'
+supported_scopes:
+  - global
+  - workspace
+source:
+  source_type: package
+  package_name: '@upstash/context7-mcp'
+  checksum: sha256:cbd5f81ca37b42ad5491099017b00d12107eb075bb3111c7a216b632fac97c4a
+dependencies:
+  - name: npx
+    type: cli
+    required: true
+trust:
+  verification_status: verified
+  publisher:
+    name: Upstash
+    url: https://github.com/upstash
+    declared_verified: true
+  allowed_executables:
+    - npx
+tags:
+  - context7
+  - documentation
+  - upstash
+  - mcp
+  - search
+handler_spec:
+  mcp:
+    transport: stdio
+    runtime: npx
+    package_name: '@upstash/context7-mcp'
+    env_vars:
+      - name: CONTEXT7_API_KEY
+        required: false
+        secret: true
+        description: Optional Context7 API key for higher rate limits (from context7.com/dashboard)
+        min_length: 16
+        format_description: minimum 16 characters

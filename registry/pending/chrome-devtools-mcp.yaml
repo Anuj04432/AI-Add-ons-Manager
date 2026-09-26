@@ -1,0 +1,54 @@
+id: chrome-devtools-mcp
+name: Chrome DevTools MCP Server
+version: 1.10.1
+description: Official Chrome DevTools server enabling AI coding assistants to control, inspect, debug, and trace live Chrome browser sessions.
+documentation_url: https://github.com/ChromeDevTools/chrome-devtools-mcp
+license: Apache-2.0
+category: developer-tools
+integration_type: mcp
+target_agents:
+  - '*'
+supported_scopes:
+  - global
+  - workspace
+source:
+  source_type: package
+  package_name: chrome-devtools-mcp
+  checksum: sha256:012cbcf6e832d4f6709dad0c21d7bef17089e94adee9cf33179d15ea0a9adf2b
+dependencies:
+  - name: npx
+    type: cli
+    required: true
+trust:
+  verification_status: verified
+  publisher:
+    name: Chrome DevTools Team
+    url: https://github.com/ChromeDevTools
+    declared_verified: true
+  allowed_executables:
+    - npx
+tags:
+  - browser
+  - devtools
+  - chrome
+  - testing
+  - automation
+  - mcp
+handler_spec:
+  mcp:
+    transport: stdio
+    runtime: npx
+    package_name: chrome-devtools-mcp
+    env_vars:
+      - name: CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS
+        required: false
+        secret: false
+        description: Set to true to opt out of usage statistics collection
+        value_pattern: ^(true|false|1|0)$
+        format_description: boolean (true or false)
+      - name: CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS
+        required: false
+        secret: false
+        description: Set to true to disable automatic update checks
+        value_pattern: ^(true|false|1|0)$
+        format_description: boolean (true or false)

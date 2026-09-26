@@ -1,0 +1,35 @@
+id: make-project-github-ready
+name: Make Project GitHub Ready Skill
+version: 0.1.0
+description: Agent skill for auditing and preparing a project for a professional GitHub repository, ensuring repository identity, community files, CI, and security standards.
+documentation_url: https://github.com/montasim/skills
+license: MIT
+category: productivity
+integration_type: skill
+target_agents:
+  - '*'
+supported_scopes:
+  - global
+  - workspace
+source:
+  source_type: git
+  url: https://github.com/montasim/skills.git
+  ref: make-project-github-ready-v0.1.0
+  commit_sha: 0fd800f5e7deebdad9f978199d5da943f7da6278
+  path: skills/make-project-github-ready
+dependencies: []
+trust:
+  verification_status: community
+  publisher:
+    name: Montasim
+    url: https://github.com/montasim
+    declared_verified: false
+tags:
+  - skill
+  - github
+  - repository-setup
+  - open-source
+  - productivity
+handler_spec:
+  skill:
+    skill_file: SKILL.md

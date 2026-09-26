@@ -1,0 +1,40 @@
+id: sequential-thinking-mcp
+name: Sequential Thinking MCP Server
+version: 2026.8.31
+description: Model Context Protocol reference server for dynamic, step-by-step structured reasoning and hypothesis evaluation.
+documentation_url: https://github.com/modelcontextprotocol/servers
+license: MIT
+category: developer-tools
+integration_type: mcp
+target_agents:
+  - '*'
+supported_scopes:
+  - global
+  - workspace
+source:
+  source_type: package
+  package_name: '@modelcontextprotocol/server-sequential-thinking'
+  checksum: sha256:b47c367af4bc1ef96cec096e67151899a29317c42009f0ac53a0d51b85c2c71d
+dependencies:
+  - name: npx
+    type: cli
+    required: true
+trust:
+  verification_status: verified
+  publisher:
+    name: Model Context Protocol Team
+    url: https://github.com/modelcontextprotocol
+    declared_verified: true
+  allowed_executables:
+    - npx
+tags:
+  - sequential-thinking
+  - reasoning
+  - thought-chain
+  - mcp
+handler_spec:
+  mcp:
+    transport: stdio
+    runtime: npx
+    package_name: '@modelcontextprotocol/server-sequential-thinking'
+    env_vars: []

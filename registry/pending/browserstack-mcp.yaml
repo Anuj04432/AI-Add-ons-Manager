@@ -1,0 +1,54 @@
+id: browserstack-mcp
+name: BrowserStack MCP Server
+version: 1.5.1
+description: Official BrowserStack MCP server for cross-browser testing, real device debugging, App Automate, and automated root cause analysis.
+documentation_url: https://github.com/browserstack/mcp-server
+license: Apache-2.0
+category: developer-tools
+integration_type: mcp
+target_agents:
+  - '*'
+supported_scopes:
+  - global
+  - workspace
+source:
+  source_type: package
+  package_name: '@browserstack/mcp-server'
+  checksum: sha256:fed162cca8b00a5cda6ac2e5d740469c8e0116f195eecd94c4c9edf0bdcce7b4
+dependencies:
+  - name: npx
+    type: cli
+    required: true
+trust:
+  verification_status: verified
+  publisher:
+    name: BrowserStack
+    url: https://github.com/browserstack
+    declared_verified: true
+  allowed_executables:
+    - npx
+tags:
+  - browserstack
+  - testing
+  - automation
+  - mobile
+  - browsers
+  - mcp
+handler_spec:
+  mcp:
+    transport: stdio
+    runtime: npx
+    package_name: '@browserstack/mcp-server'
+    env_vars:
+      - name: BROWSERSTACK_USERNAME
+        required: true
+        secret: false
+        description: BrowserStack account username (obtain from browserstack.com/accounts/profile/details)
+        min_length: 3
+        format_description: BrowserStack username
+      - name: BROWSERSTACK_ACCESS_KEY
+        required: true
+        secret: true
+        description: BrowserStack access key for API authentication
+        min_length: 16
+        format_description: alphanumeric access key (min 16 chars)

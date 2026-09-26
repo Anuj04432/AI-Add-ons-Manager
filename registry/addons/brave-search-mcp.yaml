@@ -1,6 +1,6 @@
 id: brave-search-mcp
 name: Brave Search MCP Server
-version: 1.0.0
+version: 0.6.2
 description: Model Context Protocol server providing web and local search capabilities
   via the Brave Search API.
 documentation_url: https://github.com/modelcontextprotocol/servers
@@ -15,7 +15,7 @@ supported_scopes:
 source:
   source_type: package
   package_name: '@modelcontextprotocol/server-brave-search'
-  checksum: sha256:e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6
+  checksum: sha256:91733a4e1e0c0de6738d3542135c40bd4356aa48a336191c855e4f9feac40f85
 dependencies:
   - name: npx
     type: cli
