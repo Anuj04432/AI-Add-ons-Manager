@@ -1,0 +1,48 @@
+id: stripe-mcp
+name: Stripe MCP Server
+version: 0.3.3
+description: Official Model Context Protocol server for Stripe payments, customers, invoices, and financial workflow automation.
+documentation_url: https://github.com/stripe/ai
+license: MIT
+category: developer-tools
+integration_type: mcp
+target_agents:
+  - '*'
+supported_scopes:
+  - global
+  - workspace
+source:
+  source_type: package
+  package_name: '@stripe/mcp'
+  checksum: sha256:2478a32e0d4e6a2c30dde7d04d36f6a6cecaa5750b1432f147aa891b785cab96
+dependencies:
+  - name: npx
+    type: cli
+    required: true
+trust:
+  verification_status: verified
+  publisher:
+    name: Stripe
+    url: https://github.com/stripe
+    declared_verified: true
+  allowed_executables:
+    - npx
+tags:
+  - stripe
+  - payments
+  - billing
+  - finance
+  - mcp
+handler_spec:
+  mcp:
+    transport: stdio
+    runtime: npx
+    package_name: '@stripe/mcp'
+    env_vars:
+      - name: STRIPE_SECRET_KEY
+        required: true
+        secret: true
+        description: Stripe Secret or Restricted API Key (obtain from dashboard.stripe.com/apikeys)
+        value_pattern: ^(sk|rk)_[a-zA-Z0-9_]+$
+        min_length: 24
+        format_description: starts with sk_ or rk_
