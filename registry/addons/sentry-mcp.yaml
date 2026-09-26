@@ -1,0 +1,48 @@
+id: sentry-mcp
+name: Sentry MCP Server
+version: 0.42.0
+description: Official Model Context Protocol server for Sentry issue tracking, error debugging, and telemetry inspection.
+documentation_url: https://github.com/getsentry/sentry-mcp
+license: FSL-1.1-ALv2
+category: developer-tools
+integration_type: mcp
+target_agents:
+  - '*'
+supported_scopes:
+  - global
+  - workspace
+source:
+  source_type: package
+  package_name: '@sentry/mcp-server'
+  checksum: sha256:edca513afe52b7cff5da482b647a05711e9282ca7cebdc312ce6cf3386cf0a8b
+dependencies:
+  - name: npx
+    type: cli
+    required: true
+trust:
+  verification_status: verified
+  publisher:
+    name: Sentry
+    url: https://github.com/getsentry
+    declared_verified: true
+  allowed_executables:
+    - npx
+tags:
+  - sentry
+  - error-tracking
+  - debugging
+  - monitoring
+  - mcp
+handler_spec:
+  mcp:
+    transport: stdio
+    runtime: npx
+    package_name: '@sentry/mcp-server'
+    env_vars:
+      - name: SENTRY_ACCESS_TOKEN
+        required: true
+        secret: true
+        description: Sentry User Auth Token (obtain from sentry.io/settings/account/api/auth-tokens)
+        value_pattern: ^(sntry_u_|sntrys_)?[a-zA-Z0-9_]{32,}$
+        min_length: 32
+        format_description: starts with sntry_u_ or sntrys_
