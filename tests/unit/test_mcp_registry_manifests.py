@@ -329,6 +329,104 @@ def test_figma_mcp_manifest_validates(registry_loader: RegistryLoader) -> None:
     assert env_vars[0].secret is True
 
 
+def test_stripe_mcp_manifest_validates(registry_loader: RegistryLoader) -> None:
+    """Verify stripe-mcp manifest loads with @stripe/mcp and STRIPE_SECRET_KEY."""
+    file_path = MANIFESTS_DIR / "stripe-mcp.yaml"
+    assert file_path.exists()
+
+    manifest = registry_loader.load_file(file_path)
+    assert manifest.id == "stripe-mcp"
+    assert manifest.name == "Stripe MCP Server"
+    assert manifest.version == "0.3.3"
+    assert manifest.integration_type == IntegrationType.MCP
+    assert manifest.category == "developer-tools"
+    assert manifest.documentation_url == "https://github.com/stripe/ai"
+    assert manifest.source.source_type == SourceType.PACKAGE
+    assert manifest.source.package_name == "@stripe/mcp"
+    assert manifest.source.checksum and manifest.source.checksum.startswith("sha256:")
+    assert manifest.trust.verification_status == VerificationStatus.VERIFIED
+    assert manifest.trust.publisher.name == "Stripe"
+    assert manifest.trust.allowed_executables == ["npx"]
+    assert manifest.handler_spec.mcp is not None
+    assert manifest.handler_spec.mcp.runtime == MCPRuntime.NPX
+    assert manifest.handler_spec.mcp.transport == MCPTransport.STDIO
+    assert manifest.handler_spec.mcp.package_name == "@stripe/mcp"
+
+    env_vars = manifest.handler_spec.mcp.env_vars
+    assert len(env_vars) == 1
+    assert env_vars[0].name == "STRIPE_SECRET_KEY"
+    assert env_vars[0].required is True
+    assert env_vars[0].secret is True
+    assert env_vars[0].min_length == 24
+    assert env_vars[0].value_pattern is not None
+
+
+def test_sentry_mcp_manifest_validates(registry_loader: RegistryLoader) -> None:
+    """Verify sentry-mcp manifest loads with @sentry/mcp-server and SENTRY_ACCESS_TOKEN."""
+    file_path = MANIFESTS_DIR / "sentry-mcp.yaml"
+    assert file_path.exists()
+
+    manifest = registry_loader.load_file(file_path)
+    assert manifest.id == "sentry-mcp"
+    assert manifest.name == "Sentry MCP Server"
+    assert manifest.version == "0.42.0"
+    assert manifest.license == "FSL-1.1-ALv2"
+    assert manifest.integration_type == IntegrationType.MCP
+    assert manifest.category == "developer-tools"
+    assert manifest.documentation_url == "https://github.com/getsentry/sentry-mcp"
+    assert manifest.source.source_type == SourceType.PACKAGE
+    assert manifest.source.package_name == "@sentry/mcp-server"
+    assert manifest.source.checksum and manifest.source.checksum.startswith("sha256:")
+    assert manifest.trust.verification_status == VerificationStatus.VERIFIED
+    assert manifest.trust.publisher.name == "Sentry"
+    assert manifest.trust.allowed_executables == ["npx"]
+    assert manifest.handler_spec.mcp is not None
+    assert manifest.handler_spec.mcp.runtime == MCPRuntime.NPX
+    assert manifest.handler_spec.mcp.transport == MCPTransport.STDIO
+    assert manifest.handler_spec.mcp.package_name == "@sentry/mcp-server"
+
+    env_vars = manifest.handler_spec.mcp.env_vars
+    assert len(env_vars) == 1
+    assert env_vars[0].name == "SENTRY_ACCESS_TOKEN"
+    assert env_vars[0].required is True
+    assert env_vars[0].secret is True
+    assert env_vars[0].min_length == 32
+    assert env_vars[0].value_pattern is not None
+
+
+def test_supabase_mcp_manifest_validates(registry_loader: RegistryLoader) -> None:
+    """Verify supabase-mcp manifest loads with @supabase/mcp-server-supabase."""
+    file_path = MANIFESTS_DIR / "supabase-mcp.yaml"
+    assert file_path.exists()
+
+    manifest = registry_loader.load_file(file_path)
+    assert manifest.id == "supabase-mcp"
+    assert manifest.name == "Supabase MCP Server"
+    assert manifest.version == "0.13.0"
+    assert manifest.license == "Apache-2.0"
+    assert manifest.integration_type == IntegrationType.MCP
+    assert manifest.category == "database"
+    assert manifest.documentation_url == "https://github.com/supabase/mcp"
+    assert manifest.source.source_type == SourceType.PACKAGE
+    assert manifest.source.package_name == "@supabase/mcp-server-supabase"
+    assert manifest.source.checksum and manifest.source.checksum.startswith("sha256:")
+    assert manifest.trust.verification_status == VerificationStatus.VERIFIED
+    assert manifest.trust.publisher.name == "Supabase"
+    assert manifest.trust.allowed_executables == ["npx"]
+    assert manifest.handler_spec.mcp is not None
+    assert manifest.handler_spec.mcp.runtime == MCPRuntime.NPX
+    assert manifest.handler_spec.mcp.transport == MCPTransport.STDIO
+    assert manifest.handler_spec.mcp.package_name == "@supabase/mcp-server-supabase"
+
+    env_vars = manifest.handler_spec.mcp.env_vars
+    assert len(env_vars) == 1
+    assert env_vars[0].name == "SUPABASE_ACCESS_TOKEN"
+    assert env_vars[0].required is True
+    assert env_vars[0].secret is True
+    assert env_vars[0].min_length == 44
+    assert env_vars[0].value_pattern is not None
+
+
 # ============================================================================
 # 2. Strict Schema Guardrails & Security Rejection
 # ============================================================================
@@ -348,10 +446,13 @@ def test_figma_mcp_manifest_validates(registry_loader: RegistryLoader) -> None:
         "notion-mcp.yaml",
         "linear-mcp.yaml",
         "figma-mcp.yaml",
+        "stripe-mcp.yaml",
+        "sentry-mcp.yaml",
+        "supabase-mcp.yaml",
     ],
 )
 def test_manifest_rejects_extra_unrecognized_fields(manifest_file: str) -> None:
-    """Ensure extra='forbid' rejects any undeclared or invented fields across all 11 manifests."""
+    """Ensure extra='forbid' rejects any undeclared or invented fields across all 14 manifests."""
     file_path = MANIFESTS_DIR / manifest_file
     raw_dict = yaml.safe_load(file_path.read_text(encoding="utf-8"))
     raw_dict["unauthorized_custom_field"] = "malicious_payload"
@@ -374,6 +475,9 @@ def test_manifest_rejects_extra_unrecognized_fields(manifest_file: str) -> None:
         "notion-mcp.yaml",
         "linear-mcp.yaml",
         "figma-mcp.yaml",
+        "stripe-mcp.yaml",
+        "sentry-mcp.yaml",
+        "supabase-mcp.yaml",
     ],
 )
 def test_manifest_rejects_shell_injection(manifest_file: str) -> None:
