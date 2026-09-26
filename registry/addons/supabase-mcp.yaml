@@ -1,0 +1,48 @@
+id: supabase-mcp
+name: Supabase MCP Server
+version: 0.13.0
+description: Official Model Context Protocol server for Supabase database management, SQL queries, and project administration.
+documentation_url: https://github.com/supabase/mcp
+license: Apache-2.0
+category: database
+integration_type: mcp
+target_agents:
+  - '*'
+supported_scopes:
+  - global
+  - workspace
+source:
+  source_type: package
+  package_name: '@supabase/mcp-server-supabase'
+  checksum: sha256:417aa2176381a3a4cb2ead3d30a2e0faa781bad6ca9d1677200dcc0e88aedfb1
+dependencies:
+  - name: npx
+    type: cli
+    required: true
+trust:
+  verification_status: verified
+  publisher:
+    name: Supabase
+    url: https://github.com/supabase
+    declared_verified: true
+  allowed_executables:
+    - npx
+tags:
+  - supabase
+  - database
+  - postgresql
+  - backend
+  - mcp
+handler_spec:
+  mcp:
+    transport: stdio
+    runtime: npx
+    package_name: '@supabase/mcp-server-supabase'
+    env_vars:
+      - name: SUPABASE_ACCESS_TOKEN
+        required: true
+        secret: true
+        description: Supabase Personal Access Token (obtain from supabase.com/dashboard/account/tokens)
+        value_pattern: ^sbp_[a-fA-F0-9]{40}$
+        min_length: 44
+        format_description: starts with sbp_ followed by 40 hex characters
