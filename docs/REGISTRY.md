@@ -107,7 +107,8 @@ handler_spec:
 
 ### Source Pinning
 - Git repositories must specify a 40-character hexadecimal `commit_sha`.
-- Remote package and URL downloads must specify a `sha256:` checksum.
+- Remote URL downloads must specify a `sha256:` checksum which is actively verified during download.
+- Runtime package sources (`source_type: package`) record the upstream publish tarball `sha256:` checksum for metadata auditability and lockfile pinning; execution is delegated directly to the host runtime (`npx`/`uvx`).
 
 ---
 

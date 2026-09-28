@@ -654,7 +654,8 @@ Registry Manifest → CompatibilityEngine → InstallationPlan → AcquisitionEn
 
 5. **`PackageSourceFetcher` (`SourceType.PACKAGE`)**:
    - Validates MCP package names (`validate_mcp_package_name`) to reject argument injection vectors.
-   - Delegates URL package archives to `UrlSourceFetcher` with SHA-256 verification.
+   - Delegates URL package archives to `UrlSourceFetcher` with real streaming SHA-256 verification.
+   - **Runtime Package Runner Specs (`package_name`)**: For packages executed directly via runtime runners (`npx`, `uvx`), `SourceSpec.checksum` records the upstream publish tarball SHA-256 hash for registry auditability and lockfile pinning. However, `aiaddons` does NOT download or verify the npm tarball at install time because execution is delegated to the host runtime (`npx -y <pkg>`). Real streaming SHA-256 checksum enforcement applies to direct archive downloads (`source_type: url`).
 
 ### 18.2 Staging Lifecycle (`SourceStagingManager`)
 - Isolates transaction staging at `~/.aiaddons/staging/<transaction_id>/`.
