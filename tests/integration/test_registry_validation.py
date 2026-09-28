@@ -103,3 +103,44 @@ def test_package_manifest_resolves_on_npm(manifest_path):
             time.sleep(1.0)
     if last_err:
         raise last_err
+
+
+@pytest.mark.parametrize("manifest_path", get_package_manifests(), ids=lambda p: p.name)
+def test_package_manifest_declared_version_exists_on_npm(manifest_path):
+    """
+    Validates that every package-sourced manifest in the live registry specifies
+    a declared version that actually exists in the versions list on npm.
+    """
+    with open(manifest_path, "r", encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+
+    source = data.get("source", {})
+    package_name = source.get("package_name")
+    assert package_name, f"Manifest {manifest_path.name}: Missing package_name"
+    declared_version = str(data.get("version", "")).strip()
+    assert declared_version, f"Manifest {manifest_path.name}: Missing version"
+
+    url = f"https://registry.npmjs.org/{package_name}"
+    headers = {"User-Agent": "aiaddons-registry-validator"}
+
+    last_err = None
+    for attempt in range(3):
+        try:
+            with httpx.Client(headers=headers, timeout=15.0) as client:
+                res = client.get(url)
+                assert res.status_code == 200, (
+                    f"Manifest {manifest_path.name}: Package '{package_name}' failed to resolve on npm (HTTP {res.status_code})."
+                )
+                pkg_data = res.json()
+                available_versions = pkg_data.get("versions", {})
+                assert declared_version in available_versions, (
+                    f"Manifest {manifest_path.name}: Declared version '{declared_version}' does not exist on npm "
+                    f"for package '{package_name}'. Available versions (sample): {sorted(list(available_versions.keys()))[-5:]}"
+                )
+                return
+        except (httpx.ConnectError, httpx.TimeoutException) as exc:
+            last_err = exc
+            time.sleep(1.0)
+    if last_err:
+        raise last_err
+
