@@ -1,6 +1,6 @@
 id: github-mcp
 name: GitHub MCP Server
-version: 1.2.0
+version: 2025.4.8
 description: Model Context Protocol server for searching code, managing PRs, and inspecting
   issues.
 documentation_url: https://github.com/github/github-mcp-server
@@ -15,7 +15,7 @@ supported_scopes:
 source:
   source_type: package
   package_name: '@modelcontextprotocol/server-github'
-  checksum: sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+  checksum: sha256:1d5b1bca9305adf0c8055131f2286514c9bea6eb31100460899a1ed9ffece5c1
 dependencies:
   - name: npx
     type: cli

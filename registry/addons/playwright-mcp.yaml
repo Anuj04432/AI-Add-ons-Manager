@@ -1,6 +1,6 @@
 id: playwright-mcp
 name: Playwright Browser Automation MCP Server
-version: 1.0.0
+version: 0.0.82
 description: Official browser automation and web scraping MCP server powered by Microsoft Playwright.
 documentation_url: https://github.com/microsoft/playwright-mcp
 license: Apache-2.0
@@ -14,7 +14,7 @@ supported_scopes:
 source:
   source_type: package
   package_name: "@playwright/mcp"
-  checksum: "sha256:c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3"
+  checksum: sha256:f668e5a4ebce36b8741af2785a9b6f82edc18e35132b2dc22a8b581c655d4ede
 dependencies:
   - name: npx
     type: cli

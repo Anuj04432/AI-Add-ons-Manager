@@ -1,6 +1,6 @@
 id: figma-mcp
 name: Figma MCP Server
-version: 1.0.0
+version: 1.40.6
 description: Model Context Protocol server for Figma design inspection, design token
   extraction, and design-to-code auditing.
 documentation_url: https://github.com/southleft/figma-console-mcp
@@ -15,7 +15,7 @@ supported_scopes:
 source:
   source_type: package
   package_name: figma-console-mcp
-  checksum: sha256:e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7
+  checksum: sha256:4635cb61e3b90c85d556403b6bfc0cf94ac4d19bc15171bca60d864ca31bc3ca
 dependencies:
   - name: npx
     type: cli

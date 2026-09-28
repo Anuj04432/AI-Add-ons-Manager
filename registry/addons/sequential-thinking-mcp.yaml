@@ -1,6 +1,6 @@
 id: sequential-thinking-mcp
 name: Sequential Thinking MCP Server
-version: 1.0.0
+version: 2026.8.31
 description: Model Context Protocol reference server for dynamic, step-by-step structured reasoning and hypothesis evaluation.
 documentation_url: https://github.com/modelcontextprotocol/servers
 license: MIT
@@ -14,7 +14,7 @@ supported_scopes:
 source:
   source_type: package
   package_name: "@modelcontextprotocol/server-sequential-thinking"
-  checksum: "sha256:a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2"
+  checksum: sha256:b47c367af4bc1ef96cec096e67151899a29317c42009f0ac53a0d51b85c2c71d
 dependencies:
   - name: npx
     type: cli
