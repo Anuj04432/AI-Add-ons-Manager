@@ -39,7 +39,7 @@ def test_github_mcp_manifest_validates(registry_loader: RegistryLoader) -> None:
     manifest = registry_loader.load_file(file_path)
     assert manifest.id == "github-mcp"
     assert manifest.name == "GitHub MCP Server"
-    assert manifest.version == "1.2.0"
+    assert manifest.version == "2025.4.8"
     assert manifest.integration_type == IntegrationType.MCP
     assert manifest.category == "developer-tools"
     assert manifest.documentation_url == "https://github.com/github/github-mcp-server"
@@ -97,7 +97,7 @@ def test_playwright_mcp_manifest_validates(registry_loader: RegistryLoader) -> N
     manifest = registry_loader.load_file(file_path)
     assert manifest.id == "playwright-mcp"
     assert manifest.name == "Playwright Browser Automation MCP Server"
-    assert manifest.version == "1.0.0"
+    assert manifest.version == "0.0.82"
     assert manifest.license == "Apache-2.0"
     assert manifest.integration_type == IntegrationType.MCP
     assert manifest.category == "testing"
@@ -147,7 +147,7 @@ def test_filesystem_mcp_manifest_validates(registry_loader: RegistryLoader) -> N
     manifest = registry_loader.load_file(file_path)
     assert manifest.id == "filesystem-mcp"
     assert manifest.name == "Filesystem MCP Server"
-    assert manifest.version == "1.0.0"
+    assert manifest.version == "2026.8.31"
     assert manifest.integration_type == IntegrationType.MCP
     assert manifest.category == "developer-tools"
     assert manifest.source.package_name == "@modelcontextprotocol/server-filesystem"
@@ -192,7 +192,7 @@ def test_firecrawl_mcp_manifest_validates(registry_loader: RegistryLoader) -> No
     manifest = registry_loader.load_file(file_path)
     assert manifest.id == "firecrawl-mcp"
     assert manifest.name == "Firecrawl MCP Server"
-    assert manifest.version == "1.0.0"
+    assert manifest.version == "3.25.5"
     assert manifest.integration_type == IntegrationType.MCP
     assert manifest.category == "search"
     assert manifest.documentation_url == "https://github.com/firecrawl/firecrawl-mcp-server"
@@ -222,7 +222,7 @@ def test_sequential_thinking_mcp_manifest_validates(registry_loader: RegistryLoa
     manifest = registry_loader.load_file(file_path)
     assert manifest.id == "sequential-thinking-mcp"
     assert manifest.name == "Sequential Thinking MCP Server"
-    assert manifest.version == "1.0.0"
+    assert manifest.version == "2026.8.31"
     assert manifest.integration_type == IntegrationType.MCP
     assert manifest.category == "developer-tools"
     assert manifest.documentation_url == "https://github.com/modelcontextprotocol/servers"
@@ -283,7 +283,7 @@ def test_figma_mcp_manifest_validates(registry_loader: RegistryLoader) -> None:
     manifest = registry_loader.load_file(file_path)
     assert manifest.id == "figma-mcp"
     assert manifest.name == "Figma MCP Server"
-    assert manifest.version == "1.0.0"
+    assert manifest.version == "1.40.6"
     assert manifest.integration_type == IntegrationType.MCP
     assert manifest.category == "design"
     assert manifest.documentation_url == "https://github.com/southleft/figma-console-mcp"
