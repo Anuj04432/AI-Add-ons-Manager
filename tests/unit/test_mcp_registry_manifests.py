@@ -140,7 +140,7 @@ def test_postgres_mcp_manifest_validates(registry_loader: RegistryLoader) -> Non
 
 
 def test_filesystem_mcp_manifest_validates(registry_loader: RegistryLoader) -> None:
-    """Verify filesystem-mcp manifest loads correctly for reference filesystem server."""
+    """Verify filesystem-mcp manifest loads correctly for reference filesystem server (verified v2026.8.31)."""
     file_path = MANIFESTS_DIR / "filesystem-mcp.yaml"
     assert file_path.exists()
 
@@ -185,7 +185,7 @@ def test_brave_search_mcp_manifest_validates(registry_loader: RegistryLoader) ->
 
 
 def test_firecrawl_mcp_manifest_validates(registry_loader: RegistryLoader) -> None:
-    """Verify firecrawl-mcp manifest loads with Firecrawl package and optional secret FIRECRAWL_API_KEY."""
+    """Verify firecrawl-mcp manifest loads with Firecrawl package and optional secret FIRECRAWL_API_KEY (verified v3.25.5)."""
     file_path = MANIFESTS_DIR / "firecrawl-mcp.yaml"
     assert file_path.exists()
 
@@ -276,7 +276,7 @@ def test_linear_mcp_is_blocked_and_removed_from_live_registry() -> None:
 
 
 def test_figma_mcp_manifest_validates(registry_loader: RegistryLoader) -> None:
-    """Verify figma-mcp manifest loads with figma-console-mcp and FIGMA_ACCESS_TOKEN secret."""
+    """Verify figma-mcp manifest loads with figma-console-mcp and FIGMA_ACCESS_TOKEN secret (verified v1.40.6)."""
     file_path = MANIFESTS_DIR / "figma-mcp.yaml"
     assert file_path.exists()
 
