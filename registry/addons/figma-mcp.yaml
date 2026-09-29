@@ -1,8 +1,7 @@
 id: figma-mcp
 name: Figma MCP Server
 version: 1.40.6
-description: Model Context Protocol server for Figma design inspection, design token
-  extraction, and design-to-code auditing.
+description: Model Context Protocol server for Figma design inspection, design token extraction, and design-to-code auditing.
 documentation_url: https://github.com/southleft/figma-console-mcp
 license: MIT
 category: design
@@ -43,8 +42,7 @@ handler_spec:
       - name: FIGMA_ACCESS_TOKEN
         required: true
         secret: true
-        description: Figma Personal Access Token (obtain from Figma Account Settings
-          under Security Personal access tokens)
+        description: Figma Personal Access Token (obtain from Figma Account Settings under Security Personal access tokens)
         value_pattern: ^fig(d|pat)_[a-zA-Z0-9_\-]+$
         min_length: 20
         format_description: starts with figd_ or figpat_
