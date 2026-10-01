@@ -44,7 +44,9 @@ class Registry:
         """Find local registry directory by searching start_path, cwd, and package parents."""
         candidates: list[Path] = []
         if start_path is not None:
-            candidates.extend([start_path / "registry" / "addons", start_path / "registry", start_path])
+            candidates.extend(
+                [start_path / "registry" / "addons", start_path / "registry", start_path]
+            )
 
         cwd = Path.cwd()
         candidates.extend([cwd / "registry" / "addons", cwd / "registry"])
@@ -52,16 +54,24 @@ class Registry:
             candidates.extend([parent / "registry" / "addons", parent / "registry"])
 
         pkg_file = Path(__file__).resolve()
+        # Bundled addons in package distribution (e.g. site-packages/aiaddons/registry/addons)
+        candidates.extend([pkg_file.parent / "addons", pkg_file.parent])
         for parent in pkg_file.parents:
             candidates.extend([parent / "registry" / "addons", parent / "registry"])
 
         for candidate in candidates:
             if candidate.exists() and candidate.is_dir():
-                if any(candidate.glob("*.yaml")) or any(candidate.glob("*.yml")) or any(candidate.glob("*.json")):
+                if (
+                    any(candidate.glob("*.yaml"))
+                    or any(candidate.glob("*.yml"))
+                    or any(candidate.glob("*.json"))
+                ):
                     return candidate
                 addons_sub = candidate / "addons"
                 if addons_sub.exists() and addons_sub.is_dir() and (
-                    any(addons_sub.glob("*.yaml")) or any(addons_sub.glob("*.yml")) or any(addons_sub.glob("*.json"))
+                    any(addons_sub.glob("*.yaml"))
+                    or any(addons_sub.glob("*.yml"))
+                    or any(addons_sub.glob("*.json"))
                 ):
                     return addons_sub
 
