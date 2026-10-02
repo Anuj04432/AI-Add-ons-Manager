@@ -9,7 +9,7 @@ from aiaddons.core.installer.models import (
     RollbackMetadata,
     RollbackOperation,
 )
-from aiaddons.core.models.agent import AgentDetectionResult, Scope
+from aiaddons.core.models.agent import AgentCapability, AgentDetectionResult, Scope
 from aiaddons.core.models.manifest import IntegrationManifest, IntegrationType
 from aiaddons.integrations.base import BaseIntegrationInstaller
 
@@ -24,12 +24,19 @@ def get_skill_target_directory(agent_id: str, scope: Scope) -> str:
             return ".codex/skills"
         if aid in ("antigravity", "agy"):
             return ".gemini/config/skills"
+        if aid in ("hermes", "hermes-agent"):
+            from pathlib import Path
+            if (Path.home() / "AppData" / "Local" / "hermes").exists():
+                return "AppData/Local/hermes/skills"
+            return ".hermes/skills"
         return f".aiaddons/skills/{aid}"
     else:
         if aid in ("claude-code", "claude"):
             return ".claude/skills"
         if aid in ("codex", "antigravity", "agy"):
             return ".agents/skills"
+        if aid in ("hermes", "hermes-agent"):
+            return ".hermes/skills"
         return ".agents/skills"
 
 
@@ -50,6 +57,9 @@ class SkillInstaller(BaseIntegrationInstaller):
             errors.append(
                 f"Invalid integration type '{manifest.integration_type.value}' for SkillInstaller."
             )
+
+        if AgentCapability.SKILL not in agent.capabilities:
+            errors.append(f"Agent '{agent.name}' does not declare capability 'skill'.")
 
         if not manifest.handler_spec.skill:
             errors.append("Missing required 'skill' handler_spec in manifest.")
