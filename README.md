@@ -12,7 +12,7 @@
 
 ## What is `aiaddons`?
 
-**`aiaddons`** is an open-source, declarative package and integration manager designed specifically for AI coding agents, including **Anthropic Claude Code**, **OpenAI Codex**, and **Antigravity CLI**. Just as `pip` manages Python dependencies and `npm` manages Node packages, `aiaddons` automates the discovery, compatibility evaluation, acquisition, configuration injection, verification, and lifecycle management of tools and extensions that AI agents require.
+**`aiaddons`** is an open-source, declarative package and integration manager designed specifically for AI coding agents, including **Anthropic Claude Code**, **OpenAI Codex**, **Antigravity CLI**, **Cursor**, and **Hermes Agent**. Just as `pip` manages Python dependencies and `npm` manages Node packages, `aiaddons` automates the discovery, compatibility evaluation, acquisition, configuration injection, verification, and lifecycle management of tools and extensions that AI agents require.
 
 Modern AI coding agents rely on a growing ecosystem of external capabilities. `aiaddons` standardizes these extensions into four first-class integration primitives:
 
@@ -21,7 +21,7 @@ Modern AI coding agents rely on a growing ecosystem of external capabilities. `a
 * **Composite Plugins**: Multi-component packages combining MCP servers, skills, and CLI tools under unified configuration boundaries.
 * **CLI Tools**: Verified external system binaries and developer utilities required by agents.
 
-`aiaddons` supports dual-scope installation: **Global** (`~/.claude.json`, `~/.codex/`, `~/.gemini/config/mcp_config.json`) for user-wide agent availability, and **Workspace** (`.claude.json`, `.agents/`, `aiaddons.lock`) for team-level, reproducible project environments checked into source control.
+`aiaddons` supports dual-scope installation: **Global** (`~/.claude.json`, `~/.codex/`, `~/.gemini/config/mcp_config.json`, `~/.cursor/mcp.json`, `~/.hermes/config.yaml`) for user-wide agent availability, and **Workspace** (`.claude.json`, `.agents/`, `.cursor/`, `aiaddons.lock`) for team-level, reproducible project environments checked into source control.
 
 ---
 
@@ -94,6 +94,8 @@ flowchart TD
   * [Claude Code](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/overview) (`claude`)
   * [OpenAI Codex](https://github.com/openai/codex) (`codex`)
   * Antigravity CLI (`agy` / `antigravity`)
+  * [Cursor](https://www.cursor.com) (`cursor`)
+  * [Hermes Agent](https://github.com/NousResearch/Hermes-Agent) (`hermes`)
 * **Optional Runtime Binaries**: `git`, `npx` / `node`, `uvx` / `python`, `pip`
 
 ### Install from Source
