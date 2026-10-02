@@ -353,25 +353,30 @@ class VerificationEngine:
                         f" config file '{op.config_path}' missing."
                     ),
                 )
+            is_yaml = op.config_path.endswith((".yaml", ".yml"))
             try:
                 content = dest.read_text(encoding="utf-8")
-                data = json.loads(content)
+                if is_yaml:
+                    data = yaml.safe_load(content) if content.strip() else {}
+                else:
+                    data = json.loads(content)
             except Exception as err:
                 return VerificationCheck(
                     check_id=check_id,
                     description=desc,
                     status=VerificationStatus.FAILED,
-                    expected_value="Valid JSON configuration",
-                    actual_value="Malformed JSON",
+                    expected_value="Valid YAML configuration" if is_yaml else "Valid JSON configuration",
+                    actual_value="Malformed YAML" if is_yaml else "Malformed JSON",
                     error_info=f"Malformed configuration file '{op.config_path}': {err}",
                 )
-            mcp_servers = data.get("mcpServers")
+            servers_key = "mcp_servers" if is_yaml else "mcpServers"
+            mcp_servers = data.get(servers_key) if isinstance(data, dict) else None
             if not isinstance(mcp_servers, dict) or op.server_name not in mcp_servers:
                 return VerificationCheck(
                     check_id=check_id,
                     description=desc,
                     status=VerificationStatus.FAILED,
-                    expected_value=f"mcpServers.{op.server_name} entry",
+                    expected_value=f"{servers_key}.{op.server_name} entry",
                     actual_value="Server entry missing",
                     error_info=f"MCP server '{op.server_name}' was not found in configuration.",
                 )
@@ -459,8 +464,8 @@ class VerificationEngine:
                 check_id=check_id,
                 description=desc,
                 status=VerificationStatus.PASSED,
-                expected_value=f"mcpServers.{op.server_name} valid",
-                actual_value=f"mcpServers.{op.server_name} verified",
+                expected_value=f"{servers_key}.{op.server_name} valid",
+                actual_value=f"{servers_key}.{op.server_name} verified",
             )
 
         if isinstance(op, AddSkillOperation):
@@ -644,33 +649,38 @@ class VerificationEngine:
 
         if isinstance(op, RemoveMcpServerOperation):
             _, dest = verify_path_security(effective_root, op.config_path)
+            is_yaml = op.config_path.endswith((".yaml", ".yml"))
+            servers_key = "mcp_servers" if is_yaml else "mcpServers"
             if not dest.exists():
                 return VerificationCheck(
                     check_id=check_id,
                     description=desc,
                     status=VerificationStatus.PASSED,
-                    expected_value=f"mcpServers.{op.server_name} removed",
+                    expected_value=f"{servers_key}.{op.server_name} removed",
                     actual_value="Config file does not exist",
                 )
             try:
                 content = dest.read_text(encoding="utf-8")
-                data = json.loads(content) if content.strip() else {}
+                if is_yaml:
+                    data = yaml.safe_load(content) if content.strip() else {}
+                else:
+                    data = json.loads(content) if content.strip() else {}
             except Exception as err:
                 return VerificationCheck(
                     check_id=check_id,
                     description=desc,
                     status=VerificationStatus.FAILED,
-                    expected_value="Valid JSON configuration",
-                    actual_value="Malformed JSON",
+                    expected_value="Valid YAML configuration" if is_yaml else "Valid JSON configuration",
+                    actual_value="Malformed YAML" if is_yaml else "Malformed JSON",
                     error_info=f"Failed to parse config file '{op.config_path}': {err}",
                 )
-            mcp_servers = data.get("mcpServers", {})
+            mcp_servers = data.get(servers_key, {}) if isinstance(data, dict) else {}
             if isinstance(mcp_servers, dict) and op.server_name in mcp_servers:
                 return VerificationCheck(
                     check_id=check_id,
                     description=desc,
                     status=VerificationStatus.FAILED,
-                    expected_value=f"mcpServers.{op.server_name} removed",
+                    expected_value=f"{servers_key}.{op.server_name} removed",
                     actual_value="Server entry still present",
                     error_info=(
                         f"MCP server '{op.server_name}' still present in '{op.config_path}'."
@@ -680,7 +690,7 @@ class VerificationEngine:
                 check_id=check_id,
                 description=desc,
                 status=VerificationStatus.PASSED,
-                expected_value=f"mcpServers.{op.server_name} removed",
+                expected_value=f"{servers_key}.{op.server_name} removed",
                 actual_value="Server entry removed",
             )
 

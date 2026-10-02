@@ -27,7 +27,7 @@ from aiaddons.core.health.models import (
     HealthReport,
     HealthStatus,
 )
-from aiaddons.core.models.agent import Scope
+from aiaddons.core.models.agent import AgentCapability, Scope
 from aiaddons.core.models.manifest import (
     DANGEROUS_ENV_VARS,
     FORBIDDEN_SHELL_PATTERNS,
@@ -756,7 +756,10 @@ class HealthCheckEngine:
                             try:
                                 content = cfg_file.read_text(encoding="utf-8").strip()
                                 if content:
-                                    json.loads(content)
+                                    if cfg_file.suffix.lower() in (".yaml", ".yml"):
+                                        yaml.safe_load(content)
+                                    else:
+                                        json.loads(content)
                             except Exception as exc:
                                 config_ok = False
                                 config_err = f"Malformed config file '{cfg_file}': {exc}"
@@ -785,10 +788,11 @@ class HealthCheckEngine:
                             category=HealthCategory.AGENTS,
                             status=HealthStatus.FAIL,
                             message=f"{res.name} configuration is malformed: {config_err}",
-                            remediation=f"Inspect JSON syntax in {res.name} config file.",
+                            remediation=f"Inspect syntax in {res.name} config file.",
                             diagnostic_details={"error": config_err},
                         )
                     )
+
             else:
                 items.append(
                     HealthCheckItem(
@@ -884,8 +888,11 @@ class HealthCheckEngine:
                 else:
                     try:
                         content = cfg_path.read_text(encoding="utf-8")
-                        cfg_json = json.loads(content)
-                        mcp_servers = cfg_json.get("mcpServers", {})
+                        if cfg_path.suffix in (".yaml", ".yml"):
+                            cfg_data = yaml.safe_load(content) or {}
+                        else:
+                            cfg_data = json.loads(content)
+                        mcp_servers = cfg_data.get("mcpServers") or cfg_data.get("mcp_servers") or {}
                         if not isinstance(mcp_servers, dict) or record.addon_id not in mcp_servers:
                             msg = (
                                 f"Installed MCP server '{record.addon_id}' missing "
@@ -916,12 +923,11 @@ class HealthCheckEngine:
 
             # Verify Skill files presence on disk
             elif record.integration_type == IntegrationType.SKILL:
-                skill_dir = adapter.get_skill_directory(
-                    record.scope, project_path=self.workspace_dir
-                ) / record.addon_id
-                skill_file = skill_dir / "SKILL.md"
-                if not skill_dir.exists() or not skill_file.exists():
-                    msg = f"Installed skill '{record.addon_id}' files missing at '{skill_dir}'."
+                if not adapter.supports_capability(AgentCapability.SKILL):
+                    msg = (
+                        f"Installed skill '{record.addon_id}' is recorded for agent "
+                        f"'{record.target_agent}' which does not support skills."
+                    )
                     consistency_issues.append(msg)
                     items.append(
                         HealthCheckItem(
@@ -929,9 +935,39 @@ class HealthCheckEngine:
                             category=HealthCategory.CONSISTENCY,
                             status=HealthStatus.FAIL,
                             message=msg,
-                            remediation=f"Reinstall: aiaddons install {record.addon_id}",
+                            remediation=f"Remove invalid skill: aiaddons remove {record.addon_id} --agent {record.target_agent}",
                         )
                     )
+                else:
+                    try:
+                        skill_dir = adapter.get_skill_directory(
+                            record.scope, project_path=self.workspace_dir
+                        ) / record.addon_id
+                        skill_file = skill_dir / "SKILL.md"
+                        if not skill_dir.exists() or not skill_file.exists():
+                            msg = f"Installed skill '{record.addon_id}' files missing at '{skill_dir}'."
+                            consistency_issues.append(msg)
+                            items.append(
+                                HealthCheckItem(
+                                    check_id=f"consistency_{record.addon_id}_skill",
+                                    category=HealthCategory.CONSISTENCY,
+                                    status=HealthStatus.FAIL,
+                                    message=msg,
+                                    remediation=f"Reinstall: aiaddons install {record.addon_id}",
+                                )
+                            )
+                    except Exception as exc:
+                        msg = f"Failed to inspect skill directory for '{record.addon_id}': {exc}"
+                        consistency_issues.append(msg)
+                        items.append(
+                            HealthCheckItem(
+                                check_id=f"consistency_{record.addon_id}_skill",
+                                category=HealthCategory.CONSISTENCY,
+                                status=HealthStatus.FAIL,
+                                message=msg,
+                                remediation=f"Reinstall: aiaddons install {record.addon_id}",
+                            )
+                        )
 
             # Verify Plugin component references
             elif record.integration_type == IntegrationType.PLUGIN:

@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import yaml
+
 from aiaddons.core.models.agent import AgentDetectionResult, Scope
 from aiaddons.core.models.manifest import IntegrationManifest, IntegrationType
 from aiaddons.integrations.mcp import make_relative_config_path
@@ -38,13 +40,20 @@ def detect_installation_drift(
                 if not content:
                     drifts.append(f"Configuration file '{config_file}' is empty.")
                 else:
-                    data = json.loads(content)
-                    mcp_servers = data.get("mcpServers", {})
+                    is_yaml = config_file.suffix.lower() in (".yaml", ".yml") or agent.agent_id.lower() in ("hermes", "hermes-agent")
+                    if is_yaml:
+                        data = yaml.safe_load(content)
+                        servers_key = "mcp_servers"
+                    else:
+                        data = json.loads(content)
+                        servers_key = "mcpServers"
+                    mcp_servers = data.get(servers_key, {}) if isinstance(data, dict) else {}
                     if not isinstance(mcp_servers, dict) or manifest.id not in mcp_servers:
                         drifts.append(
-                            f"MCP server entry '{manifest.id}' is missing from 'mcpServers' "
+                            f"MCP server entry '{manifest.id}' is missing from '{servers_key}' "
                             f"in '{config_file}'."
                         )
+
             except Exception as exc:
                 drifts.append(
                     f"Configuration file '{config_file}' is malformed or unreadable: {exc}"
