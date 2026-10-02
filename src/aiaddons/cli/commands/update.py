@@ -154,7 +154,7 @@ def update_command(
         None,
         "--agent",
         "-a",
-        help="Target agent ID (e.g. 'claude-code', 'codex', or 'antigravity')",
+        help="Target agent ID (e.g. 'claude-code', 'codex', 'antigravity', 'cursor', or 'hermes')",
     ),
     registry_path: Path | None = typer.Option(
         None,

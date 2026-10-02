@@ -214,6 +214,8 @@ class AIAddonsTUIApp(App[None]):
                             ("Claude Code", "claude-code"),
                             ("Codex", "codex"),
                             ("Antigravity CLI", "antigravity"),
+                            ("Cursor", "cursor"),
+                            ("Hermes Agent", "hermes"),
                         ],
                         value="claude-code",
                         id="select-agent",
@@ -680,7 +682,7 @@ class AIAddonsTUIApp(App[None]):
             secret_map[name] = val
 
         if all_warnings and not force_secrets:
-            def handle_warning_result(confirmed: bool) -> None:
+            def handle_warning_result(confirmed: bool | None) -> None:
                 if confirmed:
                     self._execute_real_installation(force_secrets=True)
             self.push_screen(SecretWarningModal(all_warnings), callback=handle_warning_result)
