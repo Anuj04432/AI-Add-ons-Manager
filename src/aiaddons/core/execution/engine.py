@@ -27,6 +27,7 @@ from aiaddons.core.execution.primitives import (
     remove_directory_primitive,
     remove_file_primitive,
     remove_json_key_primitive,
+    remove_yaml_key_primitive,
 )
 from aiaddons.core.execution.security import verify_safe_target_path
 from aiaddons.core.installer.models import (
@@ -116,7 +117,10 @@ class RollbackAction:
             else:
                 remove_file_primitive(self.target_root, self.target_path)
         elif self.json_path:
-            remove_json_key_primitive(self.target_root, self.target_path, self.json_path)
+            if self.op_type == "yaml":
+                remove_yaml_key_primitive(self.target_root, self.target_path, self.json_path)
+            else:
+                remove_json_key_primitive(self.target_root, self.target_path, self.json_path)
 
 
 class ExecutionEngine:
@@ -1225,8 +1229,8 @@ class ExecutionEngine:
         if isinstance(op, CreateDirectoryOperation):
             _, dest = verify_safe_target_path(effective_root, op.directory_path)
             existed = dest.exists()
-            op_to_run = op if effective_root == op.target_root else op.model_copy(update={"target_root": effective_root})
-            create_directory_primitive(op_to_run)
+            op_mkdir = op if effective_root == op.target_root else op.model_copy(update={"target_root": effective_root})
+            create_directory_primitive(op_mkdir)
             return RollbackAction(
                 op_type="directory",
                 target_root=effective_root,
@@ -1268,8 +1272,8 @@ class ExecutionEngine:
             _, dest = verify_safe_target_path(effective_root, op.destination_path)
             existed = dest.exists()
             backup = dest.read_text(encoding="utf-8") if (existed and dest.is_file()) else None
-            op_to_run = op if effective_root == op.target_root else op.model_copy(update={"target_root": effective_root})
-            copy_file_primitive(op_to_run)
+            op_copy = op if effective_root == op.target_root else op.model_copy(update={"target_root": effective_root})
+            copy_file_primitive(op_copy)
             return RollbackAction(
                 op_type="file",
                 target_root=effective_root,
@@ -1297,8 +1301,8 @@ class ExecutionEngine:
                             var_key = v[2:-1]
                             if secret_values[var_key] is not None:
                                 resolved_value["env"][k] = secret_values[var_key]
-            op_to_run = op.model_copy(update={"target_root": effective_root, "value": resolved_value})
-            modify_json_primitive(op_to_run)
+            op_json = op.model_copy(update={"target_root": effective_root, "value": resolved_value})
+            modify_json_primitive(op_json)
             return RollbackAction(
                 op_type="json",
                 target_root=effective_root,
@@ -1312,8 +1316,8 @@ class ExecutionEngine:
             _, dest = verify_safe_target_path(effective_root, op.file_path)
             existed = dest.exists()
             backup = dest.read_text(encoding="utf-8") if (existed and dest.is_file()) else None
-            op_to_run = op if effective_root == op.target_root else op.model_copy(update={"target_root": effective_root})
-            modify_yaml_primitive(op_to_run)
+            op_yaml = op if effective_root == op.target_root else op.model_copy(update={"target_root": effective_root})
+            modify_yaml_primitive(op_yaml)
             return RollbackAction(
                 op_type="yaml",
                 target_root=effective_root,
@@ -1327,7 +1331,8 @@ class ExecutionEngine:
             existed = dest.exists()
             backup = dest.read_text(encoding="utf-8") if (existed and dest.is_file()) else None
 
-            json_key = f"mcpServers.{op.server_name}"
+            is_yaml = op.config_path.endswith((".yaml", ".yml"))
+            config_key = f"mcp_servers.{op.server_name}" if is_yaml else f"mcpServers.{op.server_name}"
             is_npx = op.runtime == MCPRuntime.NPX
             args_list = ["-y", op.package_name] if is_npx else [op.package_name]
             mcp_val: dict[str, Any] = {
@@ -1346,40 +1351,61 @@ class ExecutionEngine:
                 mcp_val["env"] = env_map
 
             rollback_action = RollbackAction(
-                op_type="json",
+                op_type="yaml" if is_yaml else "json",
                 target_root=effective_root,
                 target_path=op.config_path,
-                json_path=json_key,
+                json_path=config_key,
                 backup_content=backup,
                 existed_before=existed,
             )
 
-            modify_op = ModifyJsonOperation(
-                description=f"Inject MCP server '{op.server_name}' configuration",
-                target_root=effective_root,
-                file_path=op.config_path,
-                json_path=json_key,
-                value=mcp_val,
-                value_summary=f"mcpServers.{op.server_name}",
-            )
-
-            try:
-                modify_json_primitive(modify_op)
-
-                runtime_map = {
-                    MCPRuntime.NPX: ExternalRuntime.NPX,
-                    MCPRuntime.UVX: ExternalRuntime.UVX,
-                    MCPRuntime.NODE: ExternalRuntime.NODE,
-                    MCPRuntime.PYTHON: ExternalRuntime.PYTHON,
-                }
-                ext_runtime = runtime_map.get(op.runtime, ExternalRuntime.NPX)
-                # Validate that the required runtime executable is present on PATH and allowlisted
-                self.external_runner.resolve_executable(ext_runtime)
-            except Exception:
-                rollback_action.rollback()
-                raise
+            if is_yaml:
+                modify_op_yaml = ModifyYamlOperation(
+                    description=f"Inject MCP server '{op.server_name}' configuration",
+                    target_root=effective_root,
+                    file_path=op.config_path,
+                    yaml_path=config_key,
+                    value=mcp_val,
+                    value_summary=f"mcp_servers.{op.server_name}",
+                )
+                try:
+                    modify_yaml_primitive(modify_op_yaml)
+                    runtime_map = {
+                        MCPRuntime.NPX: ExternalRuntime.NPX,
+                        MCPRuntime.UVX: ExternalRuntime.UVX,
+                        MCPRuntime.NODE: ExternalRuntime.NODE,
+                        MCPRuntime.PYTHON: ExternalRuntime.PYTHON,
+                    }
+                    ext_runtime = runtime_map.get(op.runtime, ExternalRuntime.NPX)
+                    self.external_runner.resolve_executable(ext_runtime)
+                except Exception:
+                    rollback_action.rollback()
+                    raise
+            else:
+                modify_op = ModifyJsonOperation(
+                    description=f"Inject MCP server '{op.server_name}' configuration",
+                    target_root=effective_root,
+                    file_path=op.config_path,
+                    json_path=config_key,
+                    value=mcp_val,
+                    value_summary=f"mcpServers.{op.server_name}",
+                )
+                try:
+                    modify_json_primitive(modify_op)
+                    runtime_map = {
+                        MCPRuntime.NPX: ExternalRuntime.NPX,
+                        MCPRuntime.UVX: ExternalRuntime.UVX,
+                        MCPRuntime.NODE: ExternalRuntime.NODE,
+                        MCPRuntime.PYTHON: ExternalRuntime.PYTHON,
+                    }
+                    ext_runtime = runtime_map.get(op.runtime, ExternalRuntime.NPX)
+                    self.external_runner.resolve_executable(ext_runtime)
+                except Exception:
+                    rollback_action.rollback()
+                    raise
 
             return rollback_action
+
 
         elif isinstance(op, AddSkillOperation):
             if op.source_dir and acquired_result and not dry_run and acquired_result.is_staged:
@@ -1564,19 +1590,25 @@ class ExecutionEngine:
             existed = dest.exists()
             backup = dest.read_text(encoding="utf-8") if (existed and dest.is_file()) else None
 
-            json_key = f"mcpServers.{op.server_name}"
+            is_yaml = op.config_path.endswith((".yaml", ".yml"))
+            config_key = f"mcp_servers.{op.server_name}" if is_yaml else f"mcpServers.{op.server_name}"
             rollback_action = RollbackAction(
-                op_type="json",
+                op_type="yaml" if is_yaml else "json",
                 target_root=effective_root,
                 target_path=op.config_path,
+                json_path=config_key,
                 backup_content=backup,
                 existed_before=existed,
             )
 
             if existed:
-                remove_json_key_primitive(effective_root, op.config_path, json_key)
+                if is_yaml:
+                    remove_yaml_key_primitive(effective_root, op.config_path, config_key)
+                else:
+                    remove_json_key_primitive(effective_root, op.config_path, config_key)
 
             return rollback_action
+
 
         elif isinstance(op, RemoveSkillOperation):
             _, dest_dir = verify_safe_target_path(effective_root, op.destination_dir)

@@ -406,6 +406,19 @@ def _check_no_forbidden_shell(obj: Any) -> None:
             _check_no_forbidden_shell(item)
 
 
+VALID_TARGET_AGENTS: set[str] = {
+    "*",
+    "claude-code",
+    "claude",
+    "codex",
+    "antigravity",
+    "agy",
+    "cursor",
+    "hermes",
+    "hermes-agent",
+}
+
+
 class IntegrationManifest(BaseModel):
     """Complete domain model representing an AI Add-on Integration Manifest."""
 
@@ -438,6 +451,23 @@ class IntegrationManifest(BaseModel):
             raise ValueError(f"Invalid add-on ID '{v}'. Must be lowercase alphanumeric or dashes.")
         return clean_id
 
+    @field_validator("target_agents")
+    @classmethod
+    def validate_target_agents(cls, v: list[str]) -> list[str]:
+        """Validate target agents against supported agent IDs."""
+        cleaned: list[str] = []
+        for agent in v:
+            c = agent.strip().lower()
+            if not c:
+                continue
+            if c not in VALID_TARGET_AGENTS and not c.startswith("test-"):
+                raise ValueError(
+                    f"Invalid target agent '{agent}'. Supported agents are: "
+                    f"{', '.join(sorted(VALID_TARGET_AGENTS))}"
+                )
+            cleaned.append(c)
+        return cleaned or ["*"]
+
     @field_validator("handler_spec")
     @classmethod
     def validate_handler_spec_matches_type(
@@ -446,3 +476,4 @@ class IntegrationManifest(BaseModel):
         """Validate that handler_spec contains the spec corresponding to integration_type."""
         _check_no_forbidden_shell(v.model_dump())
         return v
+

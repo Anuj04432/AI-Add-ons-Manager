@@ -5,8 +5,10 @@ from pathlib import Path
 from aiaddons.core.compatibility.models import CompatibilityResult
 from aiaddons.core.installer.models import (
     AddMcpServerOperation,
+    BaseOperation,
     InstallationPlan,
     ModifyJsonOperation,
+    ModifyYamlOperation,
     RiskLevel,
     RollbackMetadata,
     RollbackOperation,
@@ -57,7 +59,7 @@ def make_relative_config_path(raw_path: str, scope: Scope) -> str:
     elif res.startswith("./"):
         res = res[2:]
 
-    if not res.endswith(".json"):
+    if not (res.endswith(".json") or res.endswith(".yaml") or res.endswith(".yml")):
         res = f"{res}/config.json"
     return res
 
@@ -106,6 +108,7 @@ class MCPInstaller(BaseIntegrationInstaller):
 
         config_path = make_relative_config_path(raw_config_path, scope)
         env_names = [e.name for e in spec.env_vars]
+        is_yaml = config_path.endswith((".yaml", ".yml")) or agent.agent_id.lower() in ("hermes", "hermes-agent")
 
         mcp_desc = (
             f"Configure MCP server '{manifest.id}' ({spec.package_name}) "
@@ -142,33 +145,63 @@ class MCPInstaller(BaseIntegrationInstaller):
             "env": {e.name: "" for e in spec.env_vars},
         }
 
-        json_desc = (
-            f"Inject key 'mcpServers.{manifest.id}' into agent configuration file '{config_path}'"
-        )
-        modify_json_op = ModifyJsonOperation(
-            description=json_desc,
-            target_root=target_root,
-            file_path=config_path,
-            json_path=f"mcpServers.{manifest.id}",
-            value=mcp_payload,
-            value_summary=f"{{command: '{spec.runtime.value}', package: '{spec.package_name}'}}",
-            target_path=config_path,
-            reversible=True,
-        )
-
-        rollback_info = RollbackMetadata(
-            reversible=True,
-            rollback_operations=[
-                RollbackOperation(
-                    op_type="remove_json_key",
-                    description=f"Remove key 'mcpServers.{manifest.id}' from '{config_path}'",
-                    target_root=target_root,
-                    target_path=config_path,
-                    params={"json_path": f"mcpServers.{manifest.id}"},
-                )
-            ],
-            instructions=f"Remove server key '{manifest.id}' under mcpServers in '{config_path}'.",
-        )
+        modify_config_op: BaseOperation
+        if is_yaml:
+            yaml_key = f"mcp_servers.{manifest.id}"
+            config_desc = (
+                f"Inject key '{yaml_key}' into agent configuration file '{config_path}'"
+            )
+            modify_config_op = ModifyYamlOperation(
+                description=config_desc,
+                target_root=target_root,
+                file_path=config_path,
+                yaml_path=yaml_key,
+                value=mcp_payload,
+                value_summary=f"{{command: '{spec.runtime.value}', package: '{spec.package_name}'}}",
+                target_path=config_path,
+                reversible=True,
+            )
+            rollback_info = RollbackMetadata(
+                reversible=True,
+                rollback_operations=[
+                    RollbackOperation(
+                        op_type="modify_yaml",
+                        description=f"Remove key '{yaml_key}' from '{config_path}'",
+                        target_root=target_root,
+                        target_path=config_path,
+                        params={"yaml_path": yaml_key},
+                    )
+                ],
+                instructions=f"Remove server key '{manifest.id}' under mcp_servers in '{config_path}'.",
+            )
+        else:
+            json_key = f"mcpServers.{manifest.id}"
+            config_desc = (
+                f"Inject key '{json_key}' into agent configuration file '{config_path}'"
+            )
+            modify_config_op = ModifyJsonOperation(
+                description=config_desc,
+                target_root=target_root,
+                file_path=config_path,
+                json_path=json_key,
+                value=mcp_payload,
+                value_summary=f"{{command: '{spec.runtime.value}', package: '{spec.package_name}'}}",
+                target_path=config_path,
+                reversible=True,
+            )
+            rollback_info = RollbackMetadata(
+                reversible=True,
+                rollback_operations=[
+                    RollbackOperation(
+                        op_type="remove_json_key",
+                        description=f"Remove key '{json_key}' from '{config_path}'",
+                        target_root=target_root,
+                        target_path=config_path,
+                        params={"json_path": json_key},
+                    )
+                ],
+                instructions=f"Remove server key '{manifest.id}' under mcpServers in '{config_path}'.",
+            )
 
         risk_level = RiskLevel.MEDIUM if scope == Scope.GLOBAL else RiskLevel.LOW
 
@@ -181,7 +214,7 @@ class MCPInstaller(BaseIntegrationInstaller):
             target_scope=scope,
             integration_type=manifest.integration_type,
             source=manifest.source,
-            planned_operations=[mcp_op, modify_json_op],
+            planned_operations=[mcp_op, modify_config_op],
             dependencies=compatibility.dependencies,
             warnings=compatibility.warnings,
             risk_level=risk_level,

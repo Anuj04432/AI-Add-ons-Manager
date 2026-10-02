@@ -211,3 +211,23 @@ def remove_json_key_primitive(target_root: str, file_path: str, json_path: str) 
                 atomic_write_file_primitive(target_root, file_path, new_json, overwrite=True)
     except Exception:
         pass
+
+
+def remove_yaml_key_primitive(target_root: str, file_path: str, yaml_path: str) -> None:
+    """Safely remove a key from a YAML configuration file inside target_root for rollback."""
+    _, resolved_dest = verify_safe_target_path(target_root, file_path)
+    if not resolved_dest.exists():
+        return
+
+    try:
+        content = resolved_dest.read_text(encoding="utf-8").strip()
+        if not content:
+            return
+        data = yaml.safe_load(content)
+        if isinstance(data, dict):
+            if _delete_nested_key(data, yaml_path):
+                new_yaml = yaml.safe_dump(data, sort_keys=False)
+                atomic_write_file_primitive(target_root, file_path, new_yaml, overwrite=True)
+    except Exception:
+        pass
+

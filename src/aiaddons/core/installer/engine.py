@@ -336,15 +336,18 @@ class InstallationEngine:
                 reversible=True,
             )
             planned_operations.append(mcp_op)
+            is_yaml = config_path.endswith((".yaml", ".yml")) or agent.agent_id.lower() in ("hermes", "hermes-agent")
+            server_key = f"mcp_servers.{manifest.id}" if is_yaml else f"mcpServers.{manifest.id}"
             rollback_operations.append(
                 RollbackOperation(
-                    op_type="modify_json",
+                    op_type="modify_yaml" if is_yaml else "modify_json",
                     description=f"Restore MCP server '{manifest.id}' in '{config_path}'",
                     target_root=target_root,
                     target_path=config_path,
-                    params={"json_path": f"mcpServers.{manifest.id}"},
+                    params={"yaml_path" if is_yaml else "json_path": server_key},
                 )
             )
+
 
         elif manifest.integration_type == IntegrationType.SKILL:
             base_dir = get_skill_target_directory(agent.agent_id, scope)
