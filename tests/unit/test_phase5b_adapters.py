@@ -56,6 +56,8 @@ def test_agent_detection_manager_adapter_lookup() -> None:
     claude = manager.get_adapter("claude-code")
     codex = manager.get_adapter("codex")
     antigravity = manager.get_adapter("antigravity")
+    cursor = manager.get_adapter("cursor")
+    hermes = manager.get_adapter("hermes")
 
     assert claude is not None
     assert claude.agent_id == "claude-code"
@@ -63,6 +65,10 @@ def test_agent_detection_manager_adapter_lookup() -> None:
     assert codex.agent_id == "codex"
     assert antigravity is not None
     assert antigravity.agent_id == "antigravity"
+    assert cursor is not None
+    assert cursor.agent_id == "cursor"
+    assert hermes is not None
+    assert hermes.agent_id == "hermes"
     assert manager.get_adapter("nonexistent") is None
 
 
