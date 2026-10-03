@@ -8,8 +8,8 @@ Thank you for your interest in contributing to `aiaddons`! We welcome contributi
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/Anuj04432/AI-Add-ons-Manager.git
-   cd AI-Add-ons-Manager
+   git clone https://github.com/Anuj04432/aiaddons.git
+   cd aiaddons
    ```
 
 2. **Create and activate a virtual environment**:
